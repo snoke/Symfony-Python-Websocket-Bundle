@@ -81,6 +81,10 @@ Send any message on the WS connection; Symfony will log it and expose the latest
 - `curl -sS http://localhost:8180/api/ws/last-message`
 If `DEMO_API_KEY` is set in the Symfony env, pass it:
 - `curl -sS -H 'X-Demo-Key: <key>' http://localhost:8180/api/ws/last-message`
+Local default is `dev-demo-key` from `docker-compose.local.yaml`.
+
+### One-shot demo (WS send + fetch)
+- `./scripts/demo_message_flow.sh`
 
 ## Presence demo
 - List all connections:

@@ -5,3 +5,6 @@ services:
       - JWT_PUBLIC_KEY_FILE=/run/keys/dev_public.pem
     volumes:
       - ./scripts/keys/dev_public.pem:/run/keys/dev_public.pem:ro
+  symfony:
+    environment:
+      - DEMO_API_KEY=dev-demo-key
