@@ -39,10 +39,10 @@ You should see `received: {"type":"pong"}`.
 The gateway consumes the outbox (Redis/Rabbit) and emits the event to the WS client.
 
 ## Why realtime-core
-- Broker-first: Events are streamed, not HTTP pushed.
-- Gateway ist nahezu stateless (WS + Presence in Redis).
-- Skalierbar für hohe Connection-Zahlen (kein Symfony-Boot pro Message).
-- Symfony ist Producer/Consumer, nicht WS-Terminator.
+- Broker-first: events are streamed, not HTTP pushed.
+- Gateway is mostly stateless (WS + presence in Redis).
+- Scales to high connection counts (no Symfony boot per message).
+- Symfony is producer/consumer, not the WS terminator.
 
 ## Broker event schema (gateway -> broker)
 Events are published to Redis streams and/or RabbitMQ:
@@ -125,10 +125,10 @@ Gateway JWT validation:
 - `JWT_AUDIENCE` (optional)
 - `JWT_LEEWAY` (seconds, optional)
 
-## Datenhoheit / DSGVO (Self-Hosted)
-- Alle Verbindungen, Presence und Events liegen in **deiner** Infrastruktur.
-- Datenaufbewahrung steuerst du über Redis-TTL / Broker-Retention.
-- DSGVO-Pflichten (Löschung, Auskunft, Zweckbindung) bleiben bei dir.
+## Data sovereignty / GDPR (self-hosted)
+- Connections, presence and events stay in **your** infrastructure.
+- Retention is controlled via Redis TTL / broker retention.
+- GDPR duties (erasure, access, purpose limitation) remain with you.
 
 ## Brokers (Redis/RabbitMQ)
 RabbitMQ Management UI:
