@@ -48,3 +48,9 @@ You should see a JSON `event` on the WS client.
 ## Notes
 - This is a scaffold. For production, add Redis/RabbitMQ, persistence, and rate limits.
 - For production, configure RS256 (JWKS or public key) in `gateway`.
+
+## Bundle config (skeleton)
+Supported types are declared but only `http` is implemented right now:
+- `transport.type`: `http` | `redis_stream` | `rabbitmq`
+- `presence.type`: `http` | `redis`
+- `events.type`: `webhook` | `redis_stream` | `rabbitmq` | `none`
