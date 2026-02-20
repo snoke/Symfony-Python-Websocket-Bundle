@@ -18,6 +18,8 @@ Default behavior:
 - Gateway bleibt relativ dünn; Symfony bleibt „Chef“ der Business‑Logik.
 - Ideal für klassische Apps mit moderatem Realtime‑Anteil.
 
+Für broker-first / high-scale (ohne Webhook), siehe Branch `realtime-core`.
+
 ## Warum nicht nur Mercure?
 - Mercure = **SSE**, nicht bidirektionales WebSocket.
 - Kein echter Client→Server WS‑Kanal für Chat/Realtime‑Commands.
