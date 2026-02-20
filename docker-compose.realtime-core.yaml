@@ -6,7 +6,7 @@ services:
       - REDIS_INBOX_STREAM=ws.inbox
       - REDIS_EVENTS_STREAM=ws.events
       - PRESENCE_REDIS_DSN=redis://redis:6379
-      - PRESENCE_REDIS_PREFIX=presence:
+      - "PRESENCE_REDIS_PREFIX=presence:"
       - PRESENCE_TTL_SECONDS=120
       - RABBITMQ_DSN=amqp://guest:guest@rabbitmq:5672/
       - RABBITMQ_EXCHANGE=ws.outbox
@@ -27,7 +27,7 @@ services:
       - WS_REDIS_DSN=redis://redis:6379
       - WS_REDIS_STREAM=ws.outbox
       - WS_REDIS_EVENTS_STREAM=ws.events
-      - WS_REDIS_PREFIX=presence:
+      - "WS_REDIS_PREFIX=presence:"
       - WS_RABBITMQ_DSN=amqp://guest:guest@rabbitmq:5672/
       - WS_RABBITMQ_EVENTS_EXCHANGE=ws.events
       - WS_RABBITMQ_EVENTS_QUEUE=ws.events

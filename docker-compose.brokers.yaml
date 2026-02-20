@@ -27,7 +27,7 @@ services:
       - WS_REDIS_DSN=redis://redis:6379
       - WS_REDIS_STREAM=ws.outbox
       - WS_REDIS_EVENTS_STREAM=ws.events
-      - WS_REDIS_PREFIX=presence:
+      - "WS_REDIS_PREFIX=presence:"
       - WS_RABBITMQ_DSN=amqp://guest:guest@rabbitmq:5672/
       - WS_RABBITMQ_EXCHANGE=ws.outbox
       - WS_RABBITMQ_QUEUE=ws.outbox

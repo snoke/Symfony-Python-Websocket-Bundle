@@ -6,6 +6,9 @@ services:
       - --providers.file.filename=/etc/traefik/traefik.prod.yml
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.email=${TRAEFIK_ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/etc/traefik/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
     environment:
       - TRAEFIK_HOST=${TRAEFIK_HOST}
       - TRAEFIK_ACME_EMAIL=${TRAEFIK_ACME_EMAIL}

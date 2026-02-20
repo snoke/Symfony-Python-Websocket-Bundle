@@ -1,7 +1,3 @@
 controllers:
   resource: ../../src/Controller/
   type: attribute
-
-snoke_ws:
-  resource: '@SnokeWsBundle/Controller/'
-  type: attribute

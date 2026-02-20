@@ -1,21 +1,3 @@
-entryPoints:
-  web:
-    address: ":80"
-  websecure:
-    address: ":443"
-
-providers:
-  file:
-    filename: /etc/traefik/traefik.prod.yml
-
-certificatesResolvers:
-  le:
-    acme:
-      email: ${TRAEFIK_ACME_EMAIL}
-      storage: /etc/traefik/acme.json
-      httpChallenge:
-        entryPoint: web
-
 http:
   routers:
     ws:
