@@ -1,25 +1,58 @@
-# Symfony + Python Realtime Stack — Branch Overview
+Symfony + Python Realtime Stack — Branch Overview
 
-This `main` branch is intentionally minimal. Pick an architecture and check out the matching branch.
+Realtime in Symfony is simple for small apps, but scaling bidirectional WebSockets introduces challenges:
+• Booting full Symfony per WebSocket message is inefficient at high connection counts
+• SSE (e.g., Mercure) is not true bidirectional communication
+• Stateless transport, presence tracking, and GDPR‑compliant retention require infrastructure control
 
-## `terminator` (Symfony‑first)
-- WebSocket gateway + **webhook/HTTP presence**
-- Fast to integrate into existing Symfony apps
-- Good fit for classic apps with moderate realtime
-- **Why not just Mercure?** Mercure = SSE, not bidirectional WS (no true client→server channel)
+This stack keeps Symfony at the core while offloading realtime concerns to specialized layers.
 
-## `realtime-core` (broker‑first)
-- **No webhook**, events go **only** through the broker (Redis/RabbitMQ)
-- Gateway is mostly stateless, presence in Redis
-- Scales to high connection counts (no Symfony boot per message)
-- Symfony is producer/consumer, not WS terminator
+---
 
-## Data sovereignty / GDPR (self‑hosted)
-- Connections, presence and events stay in **your** infrastructure
-- Retention/TTL is yours to control (Redis/Broker)
-- GDPR duties (erasure, access, purpose limitation) remain with you — but are technically enforceable
+1) terminator (Symfony‑first) — Symfony stays in charge
 
-## Start
+Think of Terminator as incremental realtime for your existing app:
+• WebSocket gateway + webhook/HTTP presence
+• Quick integration into any Symfony app
+• Ideal for moderate realtime workloads
+• Symfony remains fully in control: Event Dispatcher, DI, Security Guards stay untouched
+• True client↔server communication (not just SSE)
+• Business logic stays fully testable; gateway can be mocked
+
+Strategic fit:
+• Classic apps with moderate realtime load
+• Production‑ready, not a toy
+• Add realtime without restructuring your app
+
+---
+
+2) realtime-core (Broker‑first) — scale without limits
+
+For high‑load or self‑hosted realtime, Realtime‑Core separates transport from application logic:
+• No webhook; events flow exclusively through a broker (Redis/RabbitMQ)
+• Gateway is stateless; presence stored in Redis
+• Handles high connection counts efficiently (no Symfony boot per message)
+• Symfony remains the producer/consumer; core logic untouched
+• Full control over retention, TTL, and GDPR compliance
+• Testable: broker/gateway can be mocked; Symfony core fully unit‑testable
+
+Strategic fit:
+• High‑scale, self‑hosted production systems
+• True separation of concerns: transport vs. application
+• Fully Symfony‑compatible — not anti‑Symfony
+
+---
+
+Key takeaways
+• Symfony remains the heart of your app in both models
+• Terminator = fast integration, moderate scale, fully Symfony‑native
+• Realtime‑Core = stateless transport, scalable to high loads, infrastructure control
+• Choose based on scaling needs and operational requirements
+• Both branches provide production‑ready, bidirectional WebSockets
+
+---
+
+Start
 - `git checkout terminator`
 - `git checkout realtime-core`
 
