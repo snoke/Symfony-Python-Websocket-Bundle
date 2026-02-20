@@ -1,0 +1,84 @@
+entryPoints:
+  web:
+    address: ":80"
+  websecure:
+    address: ":443"
+
+providers:
+  file:
+    filename: /etc/traefik/traefik.prod.yml
+
+certificatesResolvers:
+  le:
+    acme:
+      email: ${TRAEFIK_ACME_EMAIL}
+      storage: /etc/traefik/acme.json
+      httpChallenge:
+        entryPoint: web
+
+http:
+  routers:
+    ws:
+      rule: "Host(`${TRAEFIK_HOST}`) && (PathPrefix(`/ws`) || PathPrefix(`/internal`))"
+      service: ws
+      entryPoints:
+        - websecure
+      middlewares:
+        - secure-headers
+        - cors
+        - rate-limit
+        - ip-allowlist
+      tls:
+        certResolver: le
+    api:
+      rule: "Host(`${TRAEFIK_HOST}`) && (PathPrefix(`/api`) || PathPrefix(`/internal/ws`))"
+      service: api
+      entryPoints:
+        - websecure
+      middlewares:
+        - secure-headers
+        - cors
+        - rate-limit
+        - ip-allowlist
+      tls:
+        certResolver: le
+  services:
+    ws:
+      loadBalancer:
+        servers:
+          - url: "http://gateway:8000"
+    api:
+      loadBalancer:
+        servers:
+          - url: "http://symfony:8000"
+  middlewares:
+    secure-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        frameDeny: true
+        referrerPolicy: "no-referrer"
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - "GET"
+          - "POST"
+          - "OPTIONS"
+        accessControlAllowHeaders:
+          - "Authorization"
+          - "Content-Type"
+          - "X-Demo-Key"
+        accessControlAllowOriginList:
+          - "https://${TRAEFIK_HOST}"
+        accessControlAllowCredentials: true
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+    ip-allowlist:
+      ipAllowList:
+        sourceRange:
+          - "0.0.0.0/0"

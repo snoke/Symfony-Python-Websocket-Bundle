@@ -1,0 +1,55 @@
+services:
+  traefik:
+    image: traefik:v3.0
+    command:
+      - --providers.file.filename=/etc/traefik/traefik.prod.yml
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    environment:
+      - TRAEFIK_HOST=${TRAEFIK_HOST}
+      - TRAEFIK_ACME_EMAIL=${TRAEFIK_ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/traefik.prod.yml:/etc/traefik/traefik.prod.yml:ro
+      - ./traefik/acme.json:/etc/traefik/acme.json
+
+  gateway:
+    build: ./gateway
+    environment:
+      - JWT_ALG=RS256
+      - JWT_USER_ID_CLAIM=user_id
+      - JWT_PUBLIC_KEY=
+      - JWT_JWKS_URL=
+      - JWT_ISSUER=${JWT_ISSUER}
+      - JWT_AUDIENCE=${JWT_AUDIENCE}
+      - JWT_LEEWAY=${JWT_LEEWAY:-0}
+      - SYMFONY_WEBHOOK_URL=http://symfony:8000/internal/ws/events
+      - SYMFONY_WEBHOOK_SECRET=${SYMFONY_WEBHOOK_SECRET}
+      - GATEWAY_API_KEY=${GATEWAY_API_KEY}
+      - LOG_FORMAT=json
+
+  symfony:
+    build: ./symfony
+    environment:
+      - APP_ENV=prod
+      - WS_GATEWAY_BASE_URL=http://gateway:8000
+      - WS_GATEWAY_API_KEY=${GATEWAY_API_KEY}
+      - SYMFONY_WEBHOOK_SECRET=${SYMFONY_WEBHOOK_SECRET}
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["brokers"]
+    volumes:
+      - redis-data:/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    profiles: ["brokers"]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+volumes:
+  redis-data:
+  rabbitmq-data:

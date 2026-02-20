@@ -23,6 +23,17 @@ Default behavior:
    - Symfony: `http://localhost:8180/api/ping`
    - HTTPS (self-signed): `https://localhost:8443/api/ping`
 
+## Quick start (prod compose)
+1. Set env:
+   - `TRAEFIK_HOST=example.com`
+   - `TRAEFIK_ACME_EMAIL=you@example.com`
+   - `GATEWAY_API_KEY=change-me`
+   - `SYMFONY_WEBHOOK_SECRET=change-me`
+2. Create ACME storage:
+   - `touch traefik/acme.json && chmod 600 traefik/acme.json`
+3. Run:
+   - `docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build`
+
 ## Minimal WS test client
 This uses RS256 for local dev.
 
