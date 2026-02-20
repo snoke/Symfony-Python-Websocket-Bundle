@@ -37,9 +37,18 @@ RABBITMQ_DSN = os.getenv("RABBITMQ_DSN", "")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "ws.outbox")
 RABBITMQ_EXCHANGE = os.getenv("RABBITMQ_EXCHANGE", "ws.outbox")
 RABBITMQ_ROUTING_KEY = os.getenv("RABBITMQ_ROUTING_KEY", "ws.outbox")
+RABBITMQ_INBOX_EXCHANGE = os.getenv("RABBITMQ_INBOX_EXCHANGE", "ws.inbox")
+RABBITMQ_INBOX_ROUTING_KEY = os.getenv("RABBITMQ_INBOX_ROUTING_KEY", "ws.inbox")
+RABBITMQ_EVENTS_EXCHANGE = os.getenv("RABBITMQ_EVENTS_EXCHANGE", "ws.events")
+RABBITMQ_EVENTS_ROUTING_KEY = os.getenv("RABBITMQ_EVENTS_ROUTING_KEY", "ws.events")
 RABBITMQ_DLQ_QUEUE = os.getenv("RABBITMQ_DLQ_QUEUE", "ws.dlq")
 RABBITMQ_DLQ_EXCHANGE = os.getenv("RABBITMQ_DLQ_EXCHANGE", "ws.dlq")
 REDIS_DLQ_STREAM = os.getenv("REDIS_DLQ_STREAM", "ws.dlq")
+REDIS_INBOX_STREAM = os.getenv("REDIS_INBOX_STREAM", "ws.inbox")
+REDIS_EVENTS_STREAM = os.getenv("REDIS_EVENTS_STREAM", "ws.events")
+PRESENCE_REDIS_DSN = os.getenv("PRESENCE_REDIS_DSN", REDIS_DSN)
+PRESENCE_REDIS_PREFIX = os.getenv("PRESENCE_REDIS_PREFIX", "presence:")
+PRESENCE_TTL_SECONDS = int(os.getenv("PRESENCE_TTL_SECONDS", "120"))
 WEBHOOK_RETRY_ATTEMPTS = int(os.getenv("WEBHOOK_RETRY_ATTEMPTS", "3"))
 WEBHOOK_RETRY_BASE_SECONDS = float(os.getenv("WEBHOOK_RETRY_BASE_SECONDS", "0.5"))
 WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
@@ -58,7 +67,15 @@ metrics: Dict[str, int] = {
     "ws_rate_limited_total": 0,
     "webhook_fail_total": 0,
     "publish_total": 0,
+    "broker_publish_total": 0,
 }
+
+redis_publish_client: Optional[redis.Redis] = None
+presence_client: Optional[redis.Redis] = None
+rabbit_publish_connection: Optional[aio_pika.RobustConnection] = None
+rabbit_publish_channel: Optional[aio_pika.Channel] = None
+rabbit_inbox_exchange: Optional[aio_pika.Exchange] = None
+rabbit_events_exchange: Optional[aio_pika.Exchange] = None
 
 def _log(event: str, **fields: Any) -> None:
     payload = {"event": event, **fields}
@@ -154,6 +171,77 @@ async def _push_rabbit_dlq(channel: aio_pika.Channel, reason: str, raw: bytes) -
     except Exception:
         pass
 
+async def _publish_broker(stream: Optional[str], exchange: Optional[aio_pika.Exchange], routing_key: str, payload: Dict[str, Any]) -> None:
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    if redis_publish_client and stream:
+        try:
+            await redis_publish_client.xadd(stream, {"data": body})
+            metrics["broker_publish_total"] += 1
+        except Exception:
+            pass
+    if exchange:
+        try:
+            message = aio_pika.Message(body=body.encode("utf-8"))
+            await exchange.publish(message, routing_key=routing_key)
+            metrics["broker_publish_total"] += 1
+        except Exception:
+            pass
+
+async def _publish_message_event(conn: Connection, data: Dict[str, Any], raw: str) -> None:
+    payload = {
+        "type": "message_received",
+        "connection_id": conn.id,
+        "user_id": conn.user_id,
+        "subjects": list(conn.subjects),
+        "connected_at": conn.connected_at,
+        "message": data,
+        "raw": raw,
+    }
+    await _publish_broker(REDIS_INBOX_STREAM, rabbit_inbox_exchange, RABBITMQ_INBOX_ROUTING_KEY, payload)
+
+async def _publish_connection_event(event_type: str, conn: Connection) -> None:
+    payload = {
+        "type": event_type,
+        "connection_id": conn.id,
+        "user_id": conn.user_id,
+        "subjects": list(conn.subjects),
+        "connected_at": conn.connected_at,
+    }
+    await _publish_broker(REDIS_EVENTS_STREAM, rabbit_events_exchange, RABBITMQ_EVENTS_ROUTING_KEY, payload)
+
+async def _presence_set(conn: Connection) -> None:
+    if not presence_client:
+        return
+    prefix = PRESENCE_REDIS_PREFIX
+    conn_key = f"{prefix}conn:{conn.id}"
+    data = {
+        "connection_id": conn.id,
+        "user_id": conn.user_id,
+        "subjects": json.dumps(list(conn.subjects)),
+        "connected_at": str(conn.connected_at),
+    }
+    await presence_client.hset(conn_key, mapping=data)
+    if PRESENCE_TTL_SECONDS > 0:
+        await presence_client.expire(conn_key, PRESENCE_TTL_SECONDS)
+    user_key = f"{prefix}user:{conn.user_id}"
+    await presence_client.sadd(user_key, conn.id)
+    if PRESENCE_TTL_SECONDS > 0:
+        await presence_client.expire(user_key, PRESENCE_TTL_SECONDS)
+    for subject in conn.subjects:
+        subject_key = f"{prefix}subject:{subject}"
+        await presence_client.sadd(subject_key, conn.id)
+        if PRESENCE_TTL_SECONDS > 0:
+            await presence_client.expire(subject_key, PRESENCE_TTL_SECONDS)
+
+async def _presence_remove(conn: Connection) -> None:
+    if not presence_client:
+        return
+    prefix = PRESENCE_REDIS_PREFIX
+    await presence_client.delete(f"{prefix}conn:{conn.id}")
+    await presence_client.srem(f"{prefix}user:{conn.user_id}", conn.id)
+    for subject in conn.subjects:
+        await presence_client.srem(f"{prefix}subject:{subject}", conn.id)
+
 async def _verify_jwt(token: str) -> Dict[str, Any]:
     kwargs: Dict[str, Any] = {}
     if JWT_ISSUER:
@@ -233,6 +321,25 @@ async def _rabbit_outbox_consumer() -> None:
 
 @app.on_event("startup")
 async def startup_tasks() -> None:
+    global redis_publish_client, presence_client
+    global rabbit_publish_connection, rabbit_publish_channel, rabbit_inbox_exchange, rabbit_events_exchange
+    if REDIS_DSN:
+        redis_publish_client = redis.from_url(REDIS_DSN, decode_responses=True)
+    if PRESENCE_REDIS_DSN:
+        presence_client = redis.from_url(PRESENCE_REDIS_DSN, decode_responses=True)
+    if RABBITMQ_DSN:
+        rabbit_publish_connection = await aio_pika.connect_robust(RABBITMQ_DSN)
+        rabbit_publish_channel = await rabbit_publish_connection.channel()
+        rabbit_inbox_exchange = await rabbit_publish_channel.declare_exchange(
+            RABBITMQ_INBOX_EXCHANGE,
+            ExchangeType.DIRECT,
+            durable=True,
+        )
+        rabbit_events_exchange = await rabbit_publish_channel.declare_exchange(
+            RABBITMQ_EVENTS_EXCHANGE,
+            ExchangeType.DIRECT,
+            durable=True,
+        )
     if REDIS_DSN:
         asyncio.create_task(_redis_outbox_consumer())
     if RABBITMQ_DSN:
@@ -264,6 +371,8 @@ async def ws_endpoint(websocket: WebSocket):
 
     metrics["ws_connections_total"] += 1
     _log("ws_connected", connection_id=conn.id, user_id=conn.user_id, subjects=list(conn.subjects))
+    asyncio.create_task(_presence_set(conn))
+    asyncio.create_task(_publish_connection_event("connected", conn))
     asyncio.create_task(_post_webhook("connected", conn))
 
     try:
@@ -282,6 +391,7 @@ async def ws_endpoint(websocket: WebSocket):
                 _log("ws_rate_limited", connection_id=conn.id, user_id=conn.user_id)
                 continue
             metrics["ws_messages_total"] += 1
+            asyncio.create_task(_publish_message_event(conn, data, msg))
             asyncio.create_task(_post_webhook(
                 "message_received",
                 conn,
@@ -299,6 +409,8 @@ async def ws_endpoint(websocket: WebSocket):
                 ids.discard(conn.id)
                 if not ids:
                     subjects_index.pop(s, None)
+        asyncio.create_task(_presence_remove(conn))
+        asyncio.create_task(_publish_connection_event("disconnected", conn))
         asyncio.create_task(_post_webhook("disconnected", conn))
 
 @app.post("/internal/publish")
