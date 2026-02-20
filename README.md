@@ -87,6 +87,16 @@ Environment variables:
 - `REDIS_DLQ_STREAM` (default `ws.dlq`)
 - `RABBITMQ_DLQ_QUEUE` (default `ws.dlq`)
 
+## Security controls
+Gateway JWT validation:
+- `JWT_ISSUER` (optional)
+- `JWT_AUDIENCE` (optional)
+- `JWT_LEEWAY` (seconds, optional)
+
+Webhook signature:
+- `SYMFONY_WEBHOOK_SECRET` must be set on **gateway** and **symfony**.
+- Header: `X-Webhook-Signature: sha256=<hex>`.
+
 ## Demo: listener + response
 Send any message on the WS connection; Symfony will log it and expose the latest payload:
 - `curl -sS http://localhost:8180/api/ws/last-message`

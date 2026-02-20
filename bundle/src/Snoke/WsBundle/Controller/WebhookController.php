@@ -24,6 +24,17 @@ class WebhookController
         if (($events['type'] ?? 'none') !== 'webhook' || !($events['webhook']['enabled'] ?? false)) {
             return new JsonResponse(['ok' => false], 404);
         }
+        $secret = $_ENV['SYMFONY_WEBHOOK_SECRET'] ?? '';
+        if ($secret !== '') {
+            $signature = (string) $request->headers->get('X-Webhook-Signature', '');
+            if ($signature === '' || !str_starts_with($signature, 'sha256=')) {
+                return new JsonResponse(['ok' => false, 'message' => 'missing signature'], 401);
+            }
+            $expected = 'sha256=' . hash_hmac('sha256', $request->getContent(), $secret);
+            if (!hash_equals($expected, $signature)) {
+                return new JsonResponse(['ok' => false, 'message' => 'invalid signature'], 401);
+            }
+        }
 
         $data = json_decode($request->getContent(), true) ?? [];
         $type = $data['type'] ?? '';

@@ -3,6 +3,8 @@ import json
 import os
 import time
 import uuid
+import hashlib
+import hmac
 from typing import Any, Dict, List, Optional, Set
 
 import aio_pika
@@ -20,7 +22,11 @@ JWT_USER_ID_CLAIM = os.getenv("JWT_USER_ID_CLAIM", "user_id")
 JWT_PUBLIC_KEY = os.getenv("JWT_PUBLIC_KEY", "")
 JWT_PUBLIC_KEY_FILE = os.getenv("JWT_PUBLIC_KEY_FILE", "")
 JWT_JWKS_URL = os.getenv("JWT_JWKS_URL", "")
+JWT_ISSUER = os.getenv("JWT_ISSUER", "")
+JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "")
+JWT_LEEWAY = int(os.getenv("JWT_LEEWAY", "0"))
 SYMFONY_WEBHOOK_URL = os.getenv("SYMFONY_WEBHOOK_URL", "")
+SYMFONY_WEBHOOK_SECRET = os.getenv("SYMFONY_WEBHOOK_SECRET", "")
 GATEWAY_API_KEY = os.getenv("GATEWAY_API_KEY", "")
 REDIS_DSN = os.getenv("REDIS_DSN", "")
 REDIS_STREAM = os.getenv("REDIS_STREAM", "ws.outbox")
@@ -87,10 +93,19 @@ async def _post_webhook(event_type: str, conn: Connection, extra: Optional[Dict[
     }
     if extra:
         payload.update(extra)
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+    headers = {}
+    if SYMFONY_WEBHOOK_SECRET:
+        signature = hmac.new(
+            SYMFONY_WEBHOOK_SECRET.encode("utf-8"),
+            body.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        headers["X-Webhook-Signature"] = f"sha256={signature}"
     async with httpx.AsyncClient(timeout=5) as client:
         for attempt in range(WEBHOOK_RETRY_ATTEMPTS):
             try:
-                await client.post(SYMFONY_WEBHOOK_URL, json=payload)
+                await client.post(SYMFONY_WEBHOOK_URL, content=body, headers=headers)
                 return
             except Exception:
                 await asyncio.sleep(WEBHOOK_RETRY_BASE_SECONDS * (2 ** attempt))
@@ -109,16 +124,23 @@ async def _push_rabbit_dlq(channel: aio_pika.Channel, reason: str, raw: bytes) -
         pass
 
 async def _verify_jwt(token: str) -> Dict[str, Any]:
+    kwargs: Dict[str, Any] = {}
+    if JWT_ISSUER:
+        kwargs["issuer"] = JWT_ISSUER
+    if JWT_AUDIENCE:
+        kwargs["audience"] = JWT_AUDIENCE
+    if JWT_LEEWAY:
+        kwargs["leeway"] = JWT_LEEWAY
     if JWT_JWKS_URL:
         jwk_client = PyJWKClient(JWT_JWKS_URL)
         signing_key = jwk_client.get_signing_key_from_jwt(token)
-        return jwt.decode(token, signing_key.key, algorithms=[JWT_ALG])
+        return jwt.decode(token, signing_key.key, algorithms=[JWT_ALG], **kwargs)
     if JWT_PUBLIC_KEY_FILE and os.path.exists(JWT_PUBLIC_KEY_FILE):
         with open(JWT_PUBLIC_KEY_FILE, "r", encoding="utf-8") as f:
             public_key = f.read()
-        return jwt.decode(token, public_key, algorithms=[JWT_ALG])
+        return jwt.decode(token, public_key, algorithms=[JWT_ALG], **kwargs)
     if JWT_PUBLIC_KEY:
-        return jwt.decode(token, JWT_PUBLIC_KEY, algorithms=[JWT_ALG])
+        return jwt.decode(token, JWT_PUBLIC_KEY, algorithms=[JWT_ALG], **kwargs)
     raise HTTPException(status_code=500, detail="JWT config missing")
 
 async def _redis_outbox_consumer() -> None:
