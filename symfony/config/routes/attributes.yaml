@@ -3,5 +3,5 @@ controllers:
   type: attribute
 
 snoke_ws:
-  resource: ../src/Snoke/WsBundle/Controller/
+  resource: '@SnokeWsBundle/Controller/'
   type: attribute

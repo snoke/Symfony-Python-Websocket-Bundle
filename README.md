@@ -2,7 +2,8 @@
 
 This repo contains:
 - `gateway/`: Python WebSocket gateway (FastAPI)
-- `symfony/`: Symfony app + reusable bundle
+- `symfony/`: Symfony app (example consumer)
+- `bundle/`: Reusable Symfony bundle (Composer package)
 - `traefik/`: Reverse proxy config
 
 Default behavior:
@@ -53,16 +54,21 @@ RabbitMQ Management UI:
 - `http://localhost:8167` (user/pass: `guest` / `guest`)
 
 ## Using the bundle in another Symfony project
-1. Copy `symfony/src/Snoke/WsBundle` into your project (or extract as a separate package later).
-2. Add autoload:
+1. Add the bundle package:
 ```
-"Snoke\\WsBundle\\": "src/Snoke/WsBundle/"
+composer require snoke/ws-bundle
 ```
-3. Register bundle in `config/bundles.php`:
+If you're working inside this monorepo, add a path repository first:
+```
+"repositories": [
+  { "type": "path", "url": "../bundle", "options": { "symlink": true } }
+]
+```
+2. Register bundle in `config/bundles.php`:
 ```
 Snoke\\WsBundle\\SnokeWsBundle::class => ['all' => true],
 ```
-4. Add config (example):
+3. Add config (example):
 ```
 snoke_ws:
   transport:

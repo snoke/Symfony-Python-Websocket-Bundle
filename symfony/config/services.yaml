@@ -5,7 +5,3 @@ services:
 
   "App\\":
     resource: "../src/"
-    exclude: "../src/Snoke/"
-
-  "Snoke\\WsBundle\\":
-    resource: "../src/Snoke/WsBundle/"

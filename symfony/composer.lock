@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "b808b16f3ca5b83f3fc14c47d4f10a30",
+    "content-hash": "5c5833db79a7a171324a0e548d75be1f",
     "packages": [
         {
             "name": "paragonie/constant_time_encoding",
@@ -579,6 +579,43 @@
                 "source": "https://github.com/php-fig/log/tree/3.0.2"
             },
             "time": "2024-09-11T13:17:53+00:00"
+        },
+        {
+            "name": "snoke/ws-bundle",
+            "version": "dev-main",
+            "dist": {
+                "type": "path",
+                "url": "../bundle",
+                "reference": "8a22a8b6643f7d0bd31fd9fc26c44c050275806e"
+            },
+            "require": {
+                "php": ">=8.4",
+                "php-amqplib/php-amqplib": "^3.7",
+                "predis/predis": "^2.3",
+                "symfony/config": "^8.0",
+                "symfony/dependency-injection": "^8.0",
+                "symfony/event-dispatcher": "^8.0",
+                "symfony/framework-bundle": "^8.0",
+                "symfony/http-client": "^8.0",
+                "symfony/http-foundation": "^8.0",
+                "symfony/http-kernel": "^8.0",
+                "symfony/routing": "^8.0"
+            },
+            "type": "symfony-bundle",
+            "extra": {
+                "symfony": {
+                    "bundle-class": "Snoke\\WsBundle\\SnokeWsBundle"
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Snoke\\WsBundle\\": "src/Snoke/WsBundle/"
+                }
+            },
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "symfony/cache",
@@ -2520,9 +2557,11 @@
     ],
     "packages-dev": [],
     "aliases": [],
-    "minimum-stability": "stable",
-    "stability-flags": {},
-    "prefer-stable": false,
+    "minimum-stability": "dev",
+    "stability-flags": {
+        "snoke/ws-bundle": 20
+    },
+    "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
         "php": ">=8.4"
