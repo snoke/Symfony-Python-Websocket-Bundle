@@ -1,0 +1,7 @@
+controllers:
+  resource: ../src/Controller/
+  type: attribute
+
+vserver_ws:
+  resource: ../src/Vserver/WsBundle/Controller/
+  type: attribute

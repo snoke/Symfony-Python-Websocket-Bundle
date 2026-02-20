@@ -1,0 +1,9 @@
+/.idea/
+/.vscode/
+/symfony/var/
+/symfony/vendor/
+/symfony/.env.local
+/symfony/.env.*.local
+/gateway/.venv/
+__pycache__/
+*.pyc

@@ -1,0 +1,25 @@
+vserver_ws:
+  transport:
+    type: http
+    http:
+      base_url: '%env(WS_GATEWAY_BASE_URL)%'
+      publish_path: '/internal/publish'
+      timeout_seconds: 5
+      auth:
+        type: api_key
+        header: 'X-Api-Key'
+        value: '%env(WS_GATEWAY_API_KEY)%'
+  presence:
+    type: http
+    http:
+      base_url: '%env(WS_GATEWAY_BASE_URL)%'
+      list_path: '/internal/connections'
+      by_user_path: '/internal/users/{user_id}/connections'
+      timeout_seconds: 5
+  events:
+    type: webhook
+    webhook:
+      path: '/internal/ws/events'
+      enabled: true
+  subjects:
+    user_prefix: 'user:'

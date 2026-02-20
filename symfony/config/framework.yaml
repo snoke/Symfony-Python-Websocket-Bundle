@@ -1,0 +1,4 @@
+framework:
+  secret: 'dev-secret'
+  router:
+    utf8: true

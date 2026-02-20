@@ -1,0 +1,17 @@
+http:
+  routers:
+    ws:
+      rule: "PathPrefix(`/ws`) || PathPrefix(`/internal`)"
+      service: ws
+    api:
+      rule: "PathPrefix(`/api`) || PathPrefix(`/internal/ws`)"
+      service: api
+  services:
+    ws:
+      loadBalancer:
+        servers:
+          - url: "http://gateway:8000"
+    api:
+      loadBalancer:
+        servers:
+          - url: "http://symfony:8000"

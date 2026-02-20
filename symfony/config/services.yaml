@@ -1,0 +1,10 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+
+  App\\:
+    resource: '../src/'
+
+  Vserver\\WsBundle\\:
+    resource: '../src/Vserver/WsBundle/'
