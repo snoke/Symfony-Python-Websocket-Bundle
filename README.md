@@ -104,6 +104,8 @@ Environment variables:
 
 Gateway metrics:
 - `GET /metrics` (Prometheus-style text)
+Health endpoints:
+- Gateway: `GET /health`, `GET /ready`
 
 ## Security controls
 Gateway JWT validation:

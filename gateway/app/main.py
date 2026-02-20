@@ -320,6 +320,14 @@ async def metrics_endpoint():
         lines.append(f"{key} {value}")
     return PlainTextResponse("\n".join(lines) + "\n")
 
+@app.get("/health")
+async def health():
+    return JSONResponse({"ok": True})
+
+@app.get("/ready")
+async def ready():
+    return JSONResponse({"ok": True})
+
 @app.get("/internal/connections")
 async def list_connections(subject: Optional[str] = None, user_id: Optional[str] = None):
     results = []
