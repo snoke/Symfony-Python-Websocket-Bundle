@@ -1,6 +1,6 @@
 <?php
 
-namespace Vserver\WsBundle\Contract;
+namespace Snoke\WsBundle\Contract;
 
 interface UserResolverInterface
 {

@@ -1,10 +1,10 @@
 <?php
 
-namespace Vserver\WsBundle\Event;
+namespace Snoke\WsBundle\Event;
 
 use Symfony\Contracts\EventDispatcher\Event;
 
-class WebsocketConnectionEstablishedEvent extends Event
+class WebsocketConnectionClosedEvent extends Event
 {
     public function __construct(
         public string $connectionId,

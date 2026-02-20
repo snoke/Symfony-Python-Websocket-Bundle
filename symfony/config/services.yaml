@@ -6,5 +6,5 @@ services:
   App\\:
     resource: '../src/'
 
-  Vserver\\WsBundle\\:
-    resource: '../src/Vserver/WsBundle/'
+  Snoke\\WsBundle\\:
+    resource: '../src/Snoke/WsBundle/'

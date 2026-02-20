@@ -1,6 +1,6 @@
 <?php
 
-namespace Vserver\WsBundle\Attribute;
+namespace Snoke\WsBundle\Attribute;
 
 use Attribute;
 

@@ -1,9 +1,9 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
-use Vserver\WsBundle\Contract\PresenceProviderInterface;
+use Snoke\WsBundle\Contract\PresenceProviderInterface;
 
 class HttpPresenceProvider implements PresenceProviderInterface
 {

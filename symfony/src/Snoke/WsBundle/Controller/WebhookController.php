@@ -1,13 +1,13 @@
 <?php
 
-namespace Vserver\WsBundle\Controller;
+namespace Snoke\WsBundle\Controller;
 
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
-use Vserver\WsBundle\Event\WebsocketConnectionEstablishedEvent;
-use Vserver\WsBundle\Event\WebsocketConnectionClosedEvent;
+use Snoke\WsBundle\Event\WebsocketConnectionEstablishedEvent;
+use Snoke\WsBundle\Event\WebsocketConnectionClosedEvent;
 
 class WebhookController
 {

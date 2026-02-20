@@ -1,9 +1,9 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
 use Predis\Client;
-use Vserver\WsBundle\Contract\PublisherInterface;
+use Snoke\WsBundle\Contract\PublisherInterface;
 
 class RedisStreamPublisher implements PublisherInterface
 {

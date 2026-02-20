@@ -1,10 +1,10 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
 use PhpAmqpLib\Connection\AMQPStreamConnection;
 use PhpAmqpLib\Message\AMQPMessage;
-use Vserver\WsBundle\Contract\PublisherInterface;
+use Snoke\WsBundle\Contract\PublisherInterface;
 
 class RabbitMqPublisher implements PublisherInterface
 {

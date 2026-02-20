@@ -2,5 +2,5 @@
 
 return [
     Symfony\Bundle\FrameworkBundle\FrameworkBundle::class => ['all' => true],
-    Vserver\WsBundle\VserverWsBundle::class => ['all' => true],
+    Snoke\WsBundle\SnokeWsBundle::class => ['all' => true],
 ];

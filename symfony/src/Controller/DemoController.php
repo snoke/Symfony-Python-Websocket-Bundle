@@ -5,8 +5,8 @@ namespace App\Controller;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
-use Vserver\WsBundle\Service\WebsocketPublisher;
-use Vserver\WsBundle\Contract\PresenceProviderInterface;
+use Snoke\WsBundle\Service\WebsocketPublisher;
+use Snoke\WsBundle\Contract\PresenceProviderInterface;
 
 class DemoController
 {

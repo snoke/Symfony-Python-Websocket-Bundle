@@ -1,6 +1,6 @@
 <?php
 
-namespace Vserver\WsBundle\DependencyInjection;
+namespace Snoke\WsBundle\DependencyInjection;
 
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\ConfigurationInterface;

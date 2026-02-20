@@ -1,12 +1,12 @@
 <?php
 
-namespace Vserver\WsBundle\DependencyInjection;
+namespace Snoke\WsBundle\DependencyInjection;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Extension\Extension;
 use Symfony\Component\DependencyInjection\Reference;
 
-class VserverWsExtension extends Extension
+class SnokeWsExtension extends Extension
 {
     public function load(array $configs, ContainerBuilder $container): void
     {

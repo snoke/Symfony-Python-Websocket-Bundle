@@ -3,5 +3,5 @@ controllers:
   type: attribute
 
 vserver_ws:
-  resource: ../src/Vserver/WsBundle/Controller/
+  resource: ../src/Snoke/WsBundle/Controller/
   type: attribute

@@ -1,9 +1,9 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
-use Vserver\WsBundle\Contract\PublisherInterface;
-use Vserver\WsBundle\Contract\SubjectKeyResolverInterface;
+use Snoke\WsBundle\Contract\PublisherInterface;
+use Snoke\WsBundle\Contract\SubjectKeyResolverInterface;
 
 class WebsocketPublisher
 {

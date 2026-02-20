@@ -1,9 +1,9 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
-use Vserver\WsBundle\Contract\PublisherInterface;
+use Snoke\WsBundle\Contract\PublisherInterface;
 
 class HttpPublisher implements PublisherInterface
 {

@@ -1,9 +1,9 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
 use Predis\Client;
-use Vserver\WsBundle\Contract\PresenceProviderInterface;
+use Snoke\WsBundle\Contract\PresenceProviderInterface;
 
 class RedisPresenceProvider implements PresenceProviderInterface
 {

@@ -1,8 +1,8 @@
 <?php
 
-namespace Vserver\WsBundle\Service;
+namespace Snoke\WsBundle\Service;
 
-use Vserver\WsBundle\Contract\UserResolverInterface;
+use Snoke\WsBundle\Contract\UserResolverInterface;
 
 class NullUserResolver implements UserResolverInterface
 {
