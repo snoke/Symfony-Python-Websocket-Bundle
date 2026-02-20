@@ -1,6 +1,6 @@
 vserver_ws:
   transport:
-    type: http
+    type: '%env(default:WS_TRANSPORT_TYPE:http)%'
     http:
       base_url: '%env(WS_GATEWAY_BASE_URL)%'
       publish_path: '/internal/publish'
@@ -9,15 +9,26 @@ vserver_ws:
         type: api_key
         header: 'X-Api-Key'
         value: '%env(WS_GATEWAY_API_KEY)%'
+    redis_stream:
+      dsn: '%env(default:WS_REDIS_DSN:redis://redis:6379)%'
+      stream: '%env(default:WS_REDIS_STREAM:ws.outbox)%'
+    rabbitmq:
+      dsn: '%env(default:WS_RABBITMQ_DSN:amqp://guest:guest@rabbitmq:5672/)%'
+      exchange: '%env(default:WS_RABBITMQ_EXCHANGE:ws.outbox)%'
+      queue: '%env(default:WS_RABBITMQ_QUEUE:ws.outbox)%'
+      routing_key: '%env(default:WS_RABBITMQ_ROUTING_KEY:ws.outbox)%'
   presence:
-    type: http
+    type: '%env(default:WS_PRESENCE_TYPE:http)%'
     http:
       base_url: '%env(WS_GATEWAY_BASE_URL)%'
       list_path: '/internal/connections'
       by_user_path: '/internal/users/{user_id}/connections'
       timeout_seconds: 5
+    redis:
+      dsn: '%env(default:WS_REDIS_DSN:redis://redis:6379)%'
+      prefix: '%env(default:WS_REDIS_PREFIX:presence:)%'
   events:
-    type: webhook
+    type: '%env(default:WS_EVENTS_TYPE:webhook)%'
     webhook:
       path: '/internal/ws/events'
       enabled: true
