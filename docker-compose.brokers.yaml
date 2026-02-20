@@ -1,0 +1,16 @@
+services:
+  redis:
+    image: redis:7-alpine
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "8167:15672"
+
+  gateway:
+    environment:
+      - REDIS_DSN=redis://redis:6379
+      - REDIS_STREAM=ws.outbox
+      - RABBITMQ_DSN=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_QUEUE=ws.outbox
