@@ -55,7 +55,7 @@ async def _send_to_subjects(subjects: List[str], payload: Any) -> int:
             pass
     return sent
 
-async def _post_webhook(event_type: str, conn: Connection) -> None:
+async def _post_webhook(event_type: str, conn: Connection, extra: Optional[Dict[str, Any]] = None) -> None:
     if not SYMFONY_WEBHOOK_URL:
         return
     payload = {
@@ -65,6 +65,8 @@ async def _post_webhook(event_type: str, conn: Connection) -> None:
         "subjects": list(conn.subjects),
         "connected_at": conn.connected_at,
     }
+    if extra:
+        payload.update(extra)
     async with httpx.AsyncClient(timeout=5) as client:
         try:
             await client.post(SYMFONY_WEBHOOK_URL, json=payload)
@@ -166,6 +168,12 @@ async def ws_endpoint(websocket: WebSocket):
                 data = {"type": "raw", "payload": msg}
             if data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+                continue
+            asyncio.create_task(_post_webhook(
+                "message_received",
+                conn,
+                {"message": data, "raw": msg}
+            ))
     except WebSocketDisconnect:
         pass
     finally:

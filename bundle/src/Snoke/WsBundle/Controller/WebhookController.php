@@ -8,6 +8,7 @@ use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use Snoke\WsBundle\Event\WebsocketConnectionEstablishedEvent;
 use Snoke\WsBundle\Event\WebsocketConnectionClosedEvent;
+use Snoke\WsBundle\Event\WebsocketMessageReceivedEvent;
 
 class WebhookController
 {
@@ -30,6 +31,8 @@ class WebhookController
         $userId = (string) ($data['user_id'] ?? '');
         $subjects = $data['subjects'] ?? [];
         $connectedAt = (int) ($data['connected_at'] ?? 0);
+        $message = $data['message'] ?? null;
+        $raw = (string) ($data['raw'] ?? '');
 
         if ($type === 'connected') {
             $this->dispatcher->dispatch(new WebsocketConnectionEstablishedEvent(
@@ -46,6 +49,16 @@ class WebhookController
                 $userId,
                 $subjects,
                 $connectedAt
+            ));
+        }
+        if ($type === 'message_received') {
+            $this->dispatcher->dispatch(new WebsocketMessageReceivedEvent(
+                $connectionId,
+                $userId,
+                $subjects,
+                $connectedAt,
+                $message,
+                $raw
             ));
         }
 

@@ -11,6 +11,7 @@ Default behavior:
 - Symfony publishes push events to the gateway via HTTP.
 - Presence is read from the gateway via HTTP.
 - Events are delivered to Symfony via a webhook (enabled by default).
+- Incoming WS messages can be forwarded to Symfony as `message_received` events.
 
 ## Quick start (dev)
 1. Generate dev keys (RS256):
