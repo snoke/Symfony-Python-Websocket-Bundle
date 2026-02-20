@@ -3,14 +3,11 @@ import json
 import os
 import time
 import uuid
-import hashlib
-import hmac
 import logging
 import sys
 from typing import Any, Dict, List, Optional, Set
 
 import aio_pika
-import httpx
 import jwt
 import redis.asyncio as redis
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
@@ -28,8 +25,6 @@ JWT_JWKS_URL = os.getenv("JWT_JWKS_URL", "")
 JWT_ISSUER = os.getenv("JWT_ISSUER", "")
 JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "")
 JWT_LEEWAY = int(os.getenv("JWT_LEEWAY", "0"))
-SYMFONY_WEBHOOK_URL = os.getenv("SYMFONY_WEBHOOK_URL", "")
-SYMFONY_WEBHOOK_SECRET = os.getenv("SYMFONY_WEBHOOK_SECRET", "")
 GATEWAY_API_KEY = os.getenv("GATEWAY_API_KEY", "")
 REDIS_DSN = os.getenv("REDIS_DSN", "")
 REDIS_STREAM = os.getenv("REDIS_STREAM", "ws.outbox")
@@ -49,8 +44,6 @@ REDIS_EVENTS_STREAM = os.getenv("REDIS_EVENTS_STREAM", "ws.events")
 PRESENCE_REDIS_DSN = os.getenv("PRESENCE_REDIS_DSN", REDIS_DSN)
 PRESENCE_REDIS_PREFIX = os.getenv("PRESENCE_REDIS_PREFIX", "presence:")
 PRESENCE_TTL_SECONDS = int(os.getenv("PRESENCE_TTL_SECONDS", "120"))
-WEBHOOK_RETRY_ATTEMPTS = int(os.getenv("WEBHOOK_RETRY_ATTEMPTS", "3"))
-WEBHOOK_RETRY_BASE_SECONDS = float(os.getenv("WEBHOOK_RETRY_BASE_SECONDS", "0.5"))
 WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
 WS_RATE_LIMIT_BURST = float(os.getenv("WS_RATE_LIMIT_BURST", "20"))
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
@@ -65,7 +58,6 @@ metrics: Dict[str, int] = {
     "ws_disconnects_total": 0,
     "ws_messages_total": 0,
     "ws_rate_limited_total": 0,
-    "webhook_fail_total": 0,
     "publish_total": 0,
     "broker_publish_total": 0,
 }
@@ -126,36 +118,6 @@ async def _send_to_subjects(subjects: List[str], payload: Any) -> int:
             pass
     return sent
 
-async def _post_webhook(event_type: str, conn: Connection, extra: Optional[Dict[str, Any]] = None) -> None:
-    if not SYMFONY_WEBHOOK_URL:
-        return
-    payload = {
-        "type": event_type,
-        "connection_id": conn.id,
-        "user_id": conn.user_id,
-        "subjects": list(conn.subjects),
-        "connected_at": conn.connected_at,
-    }
-    if extra:
-        payload.update(extra)
-    body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-    headers = {}
-    if SYMFONY_WEBHOOK_SECRET:
-        signature = hmac.new(
-            SYMFONY_WEBHOOK_SECRET.encode("utf-8"),
-            body.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()
-        headers["X-Webhook-Signature"] = f"sha256={signature}"
-    async with httpx.AsyncClient(timeout=5) as client:
-        for attempt in range(WEBHOOK_RETRY_ATTEMPTS):
-            try:
-                await client.post(SYMFONY_WEBHOOK_URL, content=body, headers=headers)
-                return
-            except Exception:
-                await asyncio.sleep(WEBHOOK_RETRY_BASE_SECONDS * (2 ** attempt))
-    metrics["webhook_fail_total"] += 1
-    _log("webhook_failed", type=event_type, connection_id=conn.id, user_id=conn.user_id)
 
 async def _push_redis_dlq(client: redis.Redis, reason: str, raw: str) -> None:
     try:
@@ -373,7 +335,6 @@ async def ws_endpoint(websocket: WebSocket):
     _log("ws_connected", connection_id=conn.id, user_id=conn.user_id, subjects=list(conn.subjects))
     asyncio.create_task(_presence_set(conn))
     asyncio.create_task(_publish_connection_event("connected", conn))
-    asyncio.create_task(_post_webhook("connected", conn))
 
     try:
         while True:
@@ -392,11 +353,6 @@ async def ws_endpoint(websocket: WebSocket):
                 continue
             metrics["ws_messages_total"] += 1
             asyncio.create_task(_publish_message_event(conn, data, msg))
-            asyncio.create_task(_post_webhook(
-                "message_received",
-                conn,
-                {"message": data, "raw": msg}
-            ))
     except WebSocketDisconnect:
         pass
     finally:
@@ -411,7 +367,6 @@ async def ws_endpoint(websocket: WebSocket):
                     subjects_index.pop(s, None)
         asyncio.create_task(_presence_remove(conn))
         asyncio.create_task(_publish_connection_event("disconnected", conn))
-        asyncio.create_task(_post_webhook("disconnected", conn))
 
 @app.post("/internal/publish")
 async def publish(payload: Dict[str, Any]):

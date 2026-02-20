@@ -1,7 +1,6 @@
 services:
   gateway:
     environment:
-      - SYMFONY_WEBHOOK_URL=
       - REDIS_DSN=redis://redis:6379
       - REDIS_STREAM=ws.outbox
       - REDIS_INBOX_STREAM=ws.inbox

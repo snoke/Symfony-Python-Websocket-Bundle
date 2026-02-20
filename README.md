@@ -8,10 +8,10 @@ This repo contains:
 
 Default behavior:
 - WebSocket connections terminate at the Python gateway.
-- Symfony publishes push events to the gateway via HTTP.
-- Presence is read from the gateway via HTTP.
-- Events are delivered to Symfony via a webhook (enabled by default).
-- Incoming WS messages can be forwarded to Symfony as `message_received` events.
+- Gateway publishes connection/message events to Redis streams and/or RabbitMQ.
+- Presence is stored in Redis (no HTTP roundtrip).
+- Symfony consumes broker events and publishes outbox messages via broker.
+- No webhook path in realtime-core.
 
 ## Quick start (dev)
 1. Generate dev keys (RS256):
@@ -26,6 +26,11 @@ Default behavior:
 ## Quick start (realtime-core)
 Broker-first, no webhook. Presence via Redis.
 - `docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml up --build`
+
+## Why realtime-core
+- Broker-first: Events are streamed, not HTTP pushed.
+- Gateway ist nahezu stateless (WS + Presence in Redis).
+- Skalierbar für hohe Connection-Zahlen (kein Symfony‑Boot pro Message).
 
 ## Quick start (prod compose)
 1. Set env:
@@ -57,7 +62,11 @@ You should see `received: {"type":"pong"}`.
 
 You should see a JSON `event` on the WS client.
 
-## Webhook payload schema (gateway -> Symfony)
+## Broker event schema (gateway -> broker)
+Events are published to Redis streams and/or RabbitMQ:
+- Redis: `REDIS_INBOX_STREAM` (messages), `REDIS_EVENTS_STREAM` (connect/disconnect)
+- RabbitMQ: `RABBITMQ_INBOX_EXCHANGE`, `RABBITMQ_EVENTS_EXCHANGE`
+
 ### Event types
 - `connected`
 - `disconnected`
@@ -84,16 +93,12 @@ You should see a JSON `event` on the WS client.
 
 ### Error / edge cases
 - Invalid JWT: WS is closed with code `4401`.
-- `ping` messages are answered with `pong` and **not** forwarded to the webhook.
+- `ping` messages are answered with `pong` and **not** published.
 - Non‑JSON WS messages become `{"type":"raw","payload":"<text>"}` and are still forwarded.
-- Webhook disabled (`events.type != webhook` or `events.webhook.enabled=false`) returns `404`.
-- If `SYMFONY_WEBHOOK_URL` is empty, webhook calls are skipped silently.
 - If rate limited, WS receives `{"type":"rate_limited"}`.
 
 ## Gateway reliability controls
 Environment variables:
-- `WEBHOOK_RETRY_ATTEMPTS` (default `3`)
-- `WEBHOOK_RETRY_BASE_SECONDS` (default `0.5`)
 - `WS_RATE_LIMIT_PER_SEC` (default `10`)
 - `WS_RATE_LIMIT_BURST` (default `20`)
 - `REDIS_DLQ_STREAM` (default `ws.dlq`)
@@ -122,9 +127,10 @@ Gateway JWT validation:
 - `JWT_AUDIENCE` (optional)
 - `JWT_LEEWAY` (seconds, optional)
 
-Webhook signature:
-- `SYMFONY_WEBHOOK_SECRET` must be set on **gateway** and **symfony**.
-- Header: `X-Webhook-Signature: sha256=<hex>`.
+## Datenhoheit / DSGVO (Self‑Hosted)
+- Alle Verbindungen, Presence und Events liegen in **deiner** Infrastruktur.
+- Datenaufbewahrung steuerst du über Redis TTL / Broker‑Retention.
+- DSGVO‑Pflichten (Löschung, Auskunft, Zweckbindung) bleiben bei dir, aber sind technisch erfüllbar.
 
 ## Demo: listener + response
 Send any message on the WS connection; Symfony will log it and expose the latest payload:
