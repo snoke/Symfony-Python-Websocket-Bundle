@@ -26,6 +26,12 @@ REDIS_DSN = os.getenv("REDIS_DSN", "")
 REDIS_STREAM = os.getenv("REDIS_STREAM", "ws.outbox")
 RABBITMQ_DSN = os.getenv("RABBITMQ_DSN", "")
 RABBITMQ_QUEUE = os.getenv("RABBITMQ_QUEUE", "ws.outbox")
+RABBITMQ_DLQ_QUEUE = os.getenv("RABBITMQ_DLQ_QUEUE", "ws.dlq")
+REDIS_DLQ_STREAM = os.getenv("REDIS_DLQ_STREAM", "ws.dlq")
+WEBHOOK_RETRY_ATTEMPTS = int(os.getenv("WEBHOOK_RETRY_ATTEMPTS", "3"))
+WEBHOOK_RETRY_BASE_SECONDS = float(os.getenv("WEBHOOK_RETRY_BASE_SECONDS", "0.5"))
+WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
+WS_RATE_LIMIT_BURST = float(os.getenv("WS_RATE_LIMIT_BURST", "20"))
 
 class Connection:
     def __init__(self, websocket: WebSocket, user_id: str, subjects: List[str]):
@@ -34,6 +40,20 @@ class Connection:
         self.user_id = user_id
         self.subjects = set(subjects)
         self.connected_at = int(time.time())
+        self._tokens = WS_RATE_LIMIT_BURST
+        self._last_refill = time.time()
+
+    def allow_message(self) -> bool:
+        if WS_RATE_LIMIT_PER_SEC <= 0:
+            return True
+        now = time.time()
+        elapsed = max(0.0, now - self._last_refill)
+        self._tokens = min(WS_RATE_LIMIT_BURST, self._tokens + elapsed * WS_RATE_LIMIT_PER_SEC)
+        self._last_refill = now
+        if self._tokens >= 1:
+            self._tokens -= 1
+            return True
+        return False
 
 connections: Dict[str, Connection] = {}
 subjects_index: Dict[str, Set[str]] = {}
@@ -68,10 +88,25 @@ async def _post_webhook(event_type: str, conn: Connection, extra: Optional[Dict[
     if extra:
         payload.update(extra)
     async with httpx.AsyncClient(timeout=5) as client:
-        try:
-            await client.post(SYMFONY_WEBHOOK_URL, json=payload)
-        except Exception:
-            pass
+        for attempt in range(WEBHOOK_RETRY_ATTEMPTS):
+            try:
+                await client.post(SYMFONY_WEBHOOK_URL, json=payload)
+                return
+            except Exception:
+                await asyncio.sleep(WEBHOOK_RETRY_BASE_SECONDS * (2 ** attempt))
+
+async def _push_redis_dlq(client: redis.Redis, reason: str, raw: str) -> None:
+    try:
+        await client.xadd(REDIS_DLQ_STREAM, {"reason": reason, "raw": raw})
+    except Exception:
+        pass
+
+async def _push_rabbit_dlq(channel: aio_pika.Channel, reason: str, raw: bytes) -> None:
+    try:
+        message = aio_pika.Message(body=raw, headers={"reason": reason})
+        await channel.default_exchange.publish(message, routing_key=RABBITMQ_DLQ_QUEUE)
+    except Exception:
+        pass
 
 async def _verify_jwt(token: str) -> Dict[str, Any]:
     if JWT_JWKS_URL:
@@ -91,40 +126,53 @@ async def _redis_outbox_consumer() -> None:
         return
     client = redis.from_url(REDIS_DSN, decode_responses=True)
     last_id = "0-0"
+    backoff = 1.0
     while True:
         try:
             response = await client.xread({REDIS_STREAM: last_id}, block=5000, count=10)
             if not response:
+                backoff = 1.0
                 continue
             for _stream, messages in response:
                 for msg_id, fields in messages:
                     last_id = msg_id
                     raw = fields.get("data", "{}")
-                    data = json.loads(raw)
-                    subjects = data.get("subjects", [])
-                    payload = data.get("payload")
-                    await _send_to_subjects(subjects, payload)
+                    try:
+                        data = json.loads(raw)
+                        subjects = data.get("subjects", [])
+                        payload = data.get("payload")
+                        await _send_to_subjects(subjects, payload)
+                    except Exception:
+                        await _push_redis_dlq(client, "parse_error", raw)
         except Exception:
-            await asyncio.sleep(1)
+            await asyncio.sleep(backoff)
+            backoff = min(30.0, backoff * 2)
 
 async def _rabbit_outbox_consumer() -> None:
     if not RABBITMQ_DSN:
         return
+    backoff = 1.0
     while True:
         try:
             connection = await aio_pika.connect_robust(RABBITMQ_DSN)
             async with connection:
                 channel = await connection.channel()
+                await channel.declare_queue(RABBITMQ_DLQ_QUEUE, durable=True)
                 queue = await channel.declare_queue(RABBITMQ_QUEUE, durable=True)
                 async with queue.iterator() as queue_iter:
                     async for message in queue_iter:
                         async with message.process():
-                            data = json.loads(message.body.decode("utf-8"))
-                            subjects = data.get("subjects", [])
-                            payload = data.get("payload")
-                            await _send_to_subjects(subjects, payload)
+                            try:
+                                data = json.loads(message.body.decode("utf-8"))
+                                subjects = data.get("subjects", [])
+                                payload = data.get("payload")
+                                await _send_to_subjects(subjects, payload)
+                                backoff = 1.0
+                            except Exception:
+                                await _push_rabbit_dlq(channel, "parse_error", message.body)
         except Exception:
-            await asyncio.sleep(2)
+            await asyncio.sleep(backoff)
+            backoff = min(30.0, backoff * 2)
 
 @app.on_event("startup")
 async def startup_tasks() -> None:
@@ -168,6 +216,9 @@ async def ws_endpoint(websocket: WebSocket):
                 data = {"type": "raw", "payload": msg}
             if data.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
+                continue
+            if not conn.allow_message():
+                await websocket.send_json({"type": "rate_limited"})
                 continue
             asyncio.create_task(_post_webhook(
                 "message_received",

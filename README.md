@@ -75,6 +75,16 @@ You should see a JSON `event` on the WS client.
 - Non‑JSON WS messages become `{"type":"raw","payload":"<text>"}` and are still forwarded.
 - Webhook disabled (`events.type != webhook` or `events.webhook.enabled=false`) returns `404`.
 - If `SYMFONY_WEBHOOK_URL` is empty, webhook calls are skipped silently.
+- If rate limited, WS receives `{"type":"rate_limited"}`.
+
+## Gateway reliability controls
+Environment variables:
+- `WEBHOOK_RETRY_ATTEMPTS` (default `3`)
+- `WEBHOOK_RETRY_BASE_SECONDS` (default `0.5`)
+- `WS_RATE_LIMIT_PER_SEC` (default `10`)
+- `WS_RATE_LIMIT_BURST` (default `20`)
+- `REDIS_DLQ_STREAM` (default `ws.dlq`)
+- `RABBITMQ_DLQ_QUEUE` (default `ws.dlq`)
 
 ## Demo: listener + response
 Send any message on the WS connection; Symfony will log it and expose the latest payload:
