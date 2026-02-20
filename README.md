@@ -41,6 +41,42 @@ You should see `received: {"type":"pong"}`.
 
 You should see a JSON `event` on the WS client.
 
+## Webhook payload schema (gateway -> Symfony)
+### Event types
+- `connected`
+- `disconnected`
+- `message_received`
+
+### Common fields
+```
+{
+  "type": "connected|disconnected|message_received",
+  "connection_id": "uuid",
+  "user_id": "42",
+  "subjects": ["user:42"],
+  "connected_at": 1700000000
+}
+```
+
+### message_received fields
+```
+{
+  "message": { "type": "chat", "payload": "hello world" },
+  "raw": "{\"type\":\"chat\",\"payload\":\"hello world\"}"
+}
+```
+
+### Error / edge cases
+- Invalid JWT: WS is closed with code `4401`.
+- `ping` messages are answered with `pong` and **not** forwarded to the webhook.
+- Non‑JSON WS messages become `{"type":"raw","payload":"<text>"}` and are still forwarded.
+- Webhook disabled (`events.type != webhook` or `events.webhook.enabled=false`) returns `404`.
+- If `SYMFONY_WEBHOOK_URL` is empty, webhook calls are skipped silently.
+
+## Demo: listener + response
+Send any message on the WS connection; Symfony will log it and expose the latest payload:
+- `curl -sS http://localhost:8180/api/ws/last-message`
+
 ## Presence demo
 - List all connections:
   - `curl -sS http://localhost:8180/api/online`
