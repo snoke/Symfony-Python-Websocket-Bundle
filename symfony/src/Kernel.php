@@ -12,9 +12,9 @@ class Kernel extends BaseKernel
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
-        $routes->import('../config/routes/*.yaml');
         $routes->import('../config/routes/{env}/*.yaml');
-        $routes->import('../src/Controller/', 'attribute');
-        $routes->import('@SnokeWsBundle/Controller/', 'attribute');
+        if ($this->environment !== 'prod') {
+            $routes->import('../config/routes/*.yaml');
+        }
     }
 }
