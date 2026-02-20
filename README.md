@@ -31,6 +31,9 @@ This uses RS256 for local dev.
 2. Run:
    - `JWT_PRIVATE_KEY_FILE=./scripts/keys/dev_private.pem WS_URL=ws://localhost:8180/ws python scripts/ws_client.py`
 
+To send a demo message on connect:
+- `WS_SEND_MESSAGE=1 WS_MESSAGE_JSON='{"type":"chat","payload":"hello world"}' JWT_PRIVATE_KEY_FILE=./scripts/keys/dev_private.pem WS_URL=ws://localhost:8180/ws python scripts/ws_client.py`
+
 You should see `received: {"type":"pong"}`.
 
 ## Publisher demo (end-to-end)
@@ -76,6 +79,8 @@ You should see a JSON `event` on the WS client.
 ## Demo: listener + response
 Send any message on the WS connection; Symfony will log it and expose the latest payload:
 - `curl -sS http://localhost:8180/api/ws/last-message`
+If `DEMO_API_KEY` is set in the Symfony env, pass it:
+- `curl -sS -H 'X-Demo-Key: <key>' http://localhost:8180/api/ws/last-message`
 
 ## Presence demo
 - List all connections:
