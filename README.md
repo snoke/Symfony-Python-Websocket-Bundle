@@ -45,6 +45,40 @@ You should see a JSON `event` on the WS client.
 - List connections for a user:
   - `curl -sS "http://localhost:8180/api/online?user_id=42"`
 
+## Brokers (Redis/RabbitMQ)
+Start with brokers:
+- `docker compose -f docker-compose.yaml -f docker-compose.local.yaml -f docker-compose.brokers.yaml up --build`
+
+RabbitMQ Management UI:
+- `http://localhost:8167` (user/pass: `guest` / `guest`)
+
+## Using the bundle in another Symfony project
+1. Copy `symfony/src/Snoke/WsBundle` into your project (or extract as a separate package later).
+2. Add autoload:
+```
+"Snoke\\WsBundle\\": "src/Snoke/WsBundle/"
+```
+3. Register bundle in `config/bundles.php`:
+```
+Snoke\\WsBundle\\SnokeWsBundle::class => ['all' => true],
+```
+4. Add config (example):
+```
+vserver_ws:
+  transport:
+    type: http
+    http:
+      base_url: '%env(WS_GATEWAY_BASE_URL)%'
+      publish_path: '/internal/publish'
+      auth:
+        type: api_key
+        value: '%env(WS_GATEWAY_API_KEY)%'
+  presence:
+    type: http
+    http:
+      base_url: '%env(WS_GATEWAY_BASE_URL)%'
+```
+
 ## Notes
 - This is a scaffold. For production, add Redis/RabbitMQ, persistence, and rate limits.
 - For production, configure RS256 (JWKS or public key) in `gateway`.
