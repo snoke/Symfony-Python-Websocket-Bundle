@@ -35,6 +35,7 @@ services:
       - WEBHOOK_RETRY_BASE_SECONDS=${WEBHOOK_RETRY_BASE_SECONDS:-0.5}
       - WEBHOOK_TIMEOUT_SECONDS=${WEBHOOK_TIMEOUT_SECONDS:-5}
       - GATEWAY_API_KEY=${GATEWAY_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_FORMAT=json
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]

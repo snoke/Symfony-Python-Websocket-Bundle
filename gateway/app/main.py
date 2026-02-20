@@ -62,10 +62,12 @@ WEBHOOK_TIMEOUT_SECONDS = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "5"))
 WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
 WS_RATE_LIMIT_BURST = float(os.getenv("WS_RATE_LIMIT_BURST", "20"))
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 
 logger = logging.getLogger("gateway")
-logger.setLevel(logging.INFO)
+logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
 handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logger.level)
 logger.addHandler(handler)
 
 metrics: Dict[str, int] = {

@@ -39,20 +39,19 @@ class SnokeWsExtension extends Extension
         $container->setParameter('snoke_ws.events', $config['events']);
         $container->setParameter('snoke_ws.subjects', $config['subjects']);
 
-        if ($transportType === 'http') {
-            $container->register('snoke_ws.http_publisher', 'Snoke\\WsBundle\\Service\\HttpPublisher')
-                ->addArgument(new Reference('http_client'))
-                ->addArgument('%snoke_ws.transport%');
-            $publisherService = 'snoke_ws.http_publisher';
-        } elseif ($transportType === 'redis_stream') {
-            $container->register('snoke_ws.redis_stream_publisher', 'Snoke\\WsBundle\\Service\\RedisStreamPublisher')
-                ->addArgument('%snoke_ws.transport%');
-            $publisherService = 'snoke_ws.redis_stream_publisher';
-        } else {
-            $container->register('snoke_ws.rabbitmq_publisher', 'Snoke\\WsBundle\\Service\\RabbitMqPublisher')
-                ->addArgument('%snoke_ws.transport%');
-            $publisherService = 'snoke_ws.rabbitmq_publisher';
-        }
+        $container->register('snoke_ws.http_publisher', 'Snoke\\WsBundle\\Service\\HttpPublisher')
+            ->addArgument(new Reference('http_client'))
+            ->addArgument('%snoke_ws.transport%');
+        $container->register('snoke_ws.redis_stream_publisher', 'Snoke\\WsBundle\\Service\\RedisStreamPublisher')
+            ->addArgument('%snoke_ws.transport%');
+        $container->register('snoke_ws.rabbitmq_publisher', 'Snoke\\WsBundle\\Service\\RabbitMqPublisher')
+            ->addArgument('%snoke_ws.transport%');
+
+        $container->register('snoke_ws.dynamic_publisher', 'Snoke\\WsBundle\\Service\\DynamicPublisher')
+            ->addArgument(new Reference('snoke_ws.http_publisher'))
+            ->addArgument(new Reference('snoke_ws.redis_stream_publisher'))
+            ->addArgument(new Reference('snoke_ws.rabbitmq_publisher'))
+            ->addArgument('%snoke_ws.transport%');
 
         if ($presenceType === 'http') {
             $container->register('snoke_ws.http_presence', 'Snoke\\WsBundle\\Service\\HttpPresenceProvider')
@@ -69,8 +68,9 @@ class SnokeWsExtension extends Extension
             ->addArgument('%snoke_ws.subjects%');
 
         $container->register('snoke_ws.publisher', 'Snoke\\WsBundle\\Service\\WebsocketPublisher')
-            ->addArgument(new Reference($publisherService))
+            ->addArgument(new Reference('snoke_ws.dynamic_publisher'))
             ->addArgument(new Reference('snoke_ws.subject_key_resolver'));
+        $container->setAlias('Snoke\\WsBundle\\Service\\WebsocketPublisher', 'snoke_ws.publisher');
 
         $container->setAlias('Snoke\\WsBundle\\Contract\\PresenceProviderInterface', $presenceService);
 

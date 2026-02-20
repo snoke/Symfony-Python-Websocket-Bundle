@@ -38,6 +38,9 @@ Event routing (EVENTS_MODE): `webhook | broker | both | none`
 3. Open / connect:
    - WebSocket: `ws://localhost:8180/ws`
    - API: `http://localhost:8180/api/ping`
+4. Core inbox consumer:
+   - `symfony-consumer` runs automatically in the core compose stack
+   - it reads `ws.inbox` and updates `/api/ws/last-message`
 4. Webhook enabled by default:
    ```
    SYMFONY_WEBHOOK_URL=http://symfony:8000/internal/ws/events
@@ -90,6 +93,12 @@ Expected response: `{"type":"pong"}`
    ```
 The event appears on the WS client in real time.
 
+For core mode:
+```
+WS_MODE=core ./scripts/push_demo.sh
+```
+This sends a WS message and checks `/api/ws/last-message`.
+
 ---
 
 ## Event Schema (gateway → webhook/broker)
@@ -124,6 +133,8 @@ Mode + transport/presence/events configurable in `symfony/config/packages/snoke_
 Key env vars:
 - `WS_MODE=terminator|core`
 - `EVENTS_MODE=webhook|broker|both|none`
+- `LOG_LEVEL`, `LOG_FORMAT` (gateway)
+- `WS_CONSUMER_LOG_LEVEL` (core consumer)
 - `SYMFONY_WEBHOOK_URL` + `SYMFONY_WEBHOOK_SECRET` (terminator)
 - `WS_GATEWAY_BASE_URL` + `WS_GATEWAY_API_KEY` (Symfony → gateway)
 - `WS_REDIS_DSN`, `WS_RABBITMQ_DSN`, … (core/broker)
@@ -153,6 +164,25 @@ Key env vars:
 - Connections, presence, and events stay in your infrastructure
 - Retention controlled via Redis TTL / broker retention
 - GDPR duties (erasure, access, purpose limitation) remain with you
+
+---
+
+## Inbox Consumer (core)
+The core stack includes a lightweight Redis stream consumer:
+- Script: `symfony/bin/ws_inbox_consumer.php`
+- Service: `App\Service\WsInboxConsumer`
+- Purpose: reads `ws.inbox` and updates `/api/ws/last-message`
+
+Run manually (optional):
+```
+docker compose -f docker-compose.yaml -f docker-compose.local.yaml -f docker-compose.realtime-core.yaml exec -T symfony php bin/ws_inbox_consumer.php
+```
+
+---
+
+## Healthchecks
+- Gateway: `GET /health`
+- Symfony: `GET /api/ping`
 
 ---
 

@@ -25,6 +25,13 @@ services:
       - WEBHOOK_RETRY_BASE_SECONDS=0.5
       - WEBHOOK_TIMEOUT_SECONDS=5
       - GATEWAY_API_KEY=dev-key
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\""]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     labels:
       - traefik.http.routers.ws.rule=PathPrefix(`/ws`) || PathPrefix(`/internal`)
       - traefik.http.routers.ws.entrypoints=web
@@ -46,3 +53,8 @@ services:
       - traefik.http.routers.api.rule=PathPrefix(`/api`) || PathPrefix(`/internal/ws`)
       - traefik.http.routers.api.entrypoints=web
       - traefik.http.services.api.loadbalancer.server.port=8000
+    healthcheck:
+      test: ["CMD-SHELL", "php -r \"echo file_get_contents('http://localhost:8000/api/ping');\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5

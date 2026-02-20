@@ -1,45 +1,45 @@
 snoke_ws:
-  mode: '%env(default::WS_MODE)%'
+  mode: '%env(resolve:default::WS_MODE)%'
   transport:
-    type: '%env(default::WS_TRANSPORT_TYPE)%'
+    type: '%env(resolve:default::WS_TRANSPORT_TYPE)%'
     http:
-      base_url: '%env(default::WS_GATEWAY_BASE_URL)%'
+      base_url: '%env(resolve:default::WS_GATEWAY_BASE_URL)%'
       publish_path: '/internal/publish'
       timeout_seconds: 5
       auth:
         type: api_key
         header: 'X-Api-Key'
-        value: '%env(default::WS_GATEWAY_API_KEY)%'
+        value: '%env(resolve:default::WS_GATEWAY_API_KEY)%'
     redis_stream:
-      dsn: '%env(default::WS_REDIS_DSN)%'
-      stream: '%env(default::WS_REDIS_STREAM)%'
+      dsn: '%env(resolve:default::WS_REDIS_DSN)%'
+      stream: '%env(resolve:default::WS_REDIS_STREAM)%'
     rabbitmq:
-      dsn: '%env(default::WS_RABBITMQ_DSN)%'
-      exchange: '%env(default::WS_RABBITMQ_EXCHANGE)%'
-      queue: '%env(default::WS_RABBITMQ_QUEUE)%'
-      routing_key: '%env(default::WS_RABBITMQ_ROUTING_KEY)%'
+      dsn: '%env(resolve:default::WS_RABBITMQ_DSN)%'
+      exchange: '%env(resolve:default::WS_RABBITMQ_EXCHANGE)%'
+      queue: '%env(resolve:default::WS_RABBITMQ_QUEUE)%'
+      routing_key: '%env(resolve:default::WS_RABBITMQ_ROUTING_KEY)%'
   presence:
-    type: '%env(default::WS_PRESENCE_TYPE)%'
+    type: '%env(resolve:default::WS_PRESENCE_TYPE)%'
     http:
-      base_url: '%env(default::WS_GATEWAY_BASE_URL)%'
+      base_url: '%env(resolve:default::WS_GATEWAY_BASE_URL)%'
       list_path: '/internal/connections'
       by_user_path: '/internal/users/{user_id}/connections'
       timeout_seconds: 5
     redis:
-      dsn: '%env(default::WS_REDIS_DSN)%'
-      prefix: '%env(default::WS_REDIS_PREFIX)%'
+      dsn: '%env(resolve:default::WS_REDIS_DSN)%'
+      prefix: '%env(resolve:default::WS_REDIS_PREFIX)%'
   events:
-    type: '%env(default::WS_EVENTS_TYPE)%'
+    type: '%env(resolve:default::WS_EVENTS_TYPE)%'
     webhook:
       path: '/internal/ws/events'
       enabled: true
     redis_stream:
-      dsn: '%env(default::WS_REDIS_DSN)%'
-      stream: '%env(default::WS_REDIS_EVENTS_STREAM)%'
+      dsn: '%env(resolve:default::WS_REDIS_DSN)%'
+      stream: '%env(resolve:default::WS_REDIS_EVENTS_STREAM)%'
     rabbitmq:
-      dsn: '%env(default::WS_RABBITMQ_DSN)%'
-      exchange: '%env(default::WS_RABBITMQ_EVENTS_EXCHANGE)%'
-      queue: '%env(default::WS_RABBITMQ_EVENTS_QUEUE)%'
-      routing_key: '%env(default::WS_RABBITMQ_EVENTS_ROUTING_KEY)%'
+      dsn: '%env(resolve:default::WS_RABBITMQ_DSN)%'
+      exchange: '%env(resolve:default::WS_RABBITMQ_EVENTS_EXCHANGE)%'
+      queue: '%env(resolve:default::WS_RABBITMQ_EVENTS_QUEUE)%'
+      routing_key: '%env(resolve:default::WS_RABBITMQ_EVENTS_ROUTING_KEY)%'
   subjects:
     user_prefix: 'user:'

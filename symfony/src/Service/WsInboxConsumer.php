@@ -7,10 +7,14 @@ use Psr\Log\LoggerInterface;
 
 class WsInboxConsumer
 {
+    private int $minLevel;
+
     public function __construct(
         private MessageInbox $inbox,
         private LoggerInterface $logger
-    ) {}
+    ) {
+        $this->minLevel = $this->parseLevel($_ENV['WS_CONSUMER_LOG_LEVEL'] ?? 'info');
+    }
 
     public function run(): void
     {
@@ -38,7 +42,7 @@ class WsInboxConsumer
             break;
         }
 
-        $this->logger->info('ws.inbox.consumer_started', [
+        $this->logInfo('ws.inbox.consumer_started', [
             'stream' => $stream,
             'last_id' => $lastId,
         ]);
@@ -92,7 +96,7 @@ class WsInboxConsumer
             'received_at' => time(),
         ];
         $this->inbox->setLastMessage($payload);
-        $this->logger->info('ws.inbox.message_received', $payload);
+        $this->logInfo('ws.inbox.message_received', $payload);
     }
 
     /**
@@ -114,5 +118,28 @@ class WsInboxConsumer
             }
         }
         return $normalized;
+    }
+
+    private function logInfo(string $message, array $context = []): void
+    {
+        if ($this->minLevel <= 200) {
+            $this->logger->info($message, $context);
+        }
+    }
+
+    private function parseLevel(string $level): int
+    {
+        $level = strtolower($level);
+        return match ($level) {
+            'debug' => 100,
+            'info' => 200,
+            'notice' => 250,
+            'warning' => 300,
+            'error' => 400,
+            'critical' => 500,
+            'alert' => 550,
+            'emergency' => 600,
+            default => 200,
+        };
     }
 }

@@ -50,9 +50,15 @@ services:
       - DEMO_INBOX_REDIS_DSN=redis://redis:6379
       - DEMO_INBOX_REDIS_STREAM=ws.inbox
       - WS_REDIS_DSN=redis://redis:6379
+      - WS_CONSUMER_LOG_LEVEL=info
     command: ["php", "bin/ws_inbox_consumer.php"]
     depends_on:
       - redis
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q ws_inbox_consumer.php /proc/1/cmdline"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   redis:
     image: redis:7-alpine
