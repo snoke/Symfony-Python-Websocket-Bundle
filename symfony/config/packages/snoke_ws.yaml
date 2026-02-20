@@ -1,6 +1,6 @@
 snoke_ws:
   transport:
-    type: '%env(default:http:WS_TRANSPORT_TYPE)%'
+    type: '%env(default:redis_stream:WS_TRANSPORT_TYPE)%'
     http:
       base_url: '%env(WS_GATEWAY_BASE_URL)%'
       publish_path: '/internal/publish'
@@ -18,7 +18,7 @@ snoke_ws:
       queue: '%env(WS_RABBITMQ_QUEUE)%'
       routing_key: '%env(WS_RABBITMQ_ROUTING_KEY)%'
   presence:
-    type: '%env(default:http:WS_PRESENCE_TYPE)%'
+    type: '%env(default:redis:WS_PRESENCE_TYPE)%'
     http:
       base_url: '%env(WS_GATEWAY_BASE_URL)%'
       list_path: '/internal/connections'
@@ -28,7 +28,7 @@ snoke_ws:
       dsn: '%env(WS_REDIS_DSN)%'
       prefix: '%env(WS_REDIS_PREFIX)%'
   events:
-    type: '%env(default:webhook:WS_EVENTS_TYPE)%'
+    type: '%env(default:none:WS_EVENTS_TYPE)%'
     webhook:
       path: '/internal/ws/events'
       enabled: true
