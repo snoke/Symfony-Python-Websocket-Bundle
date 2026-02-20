@@ -1,0 +1,19 @@
+api_ping:
+  path: /api/ping
+  methods: [GET]
+  controller: App\Controller\DemoController::ping
+
+api_push_demo:
+  path: /api/push-demo/{userId}
+  methods: [POST]
+  controller: App\Controller\DemoController::pushDemo
+
+api_online:
+  path: /api/online
+  methods: [GET]
+  controller: App\Controller\DemoController::online
+
+ws_last_message:
+  path: /api/ws/last-message
+  methods: [GET]
+  controller: App\Controller\WsDemoController::lastMessage

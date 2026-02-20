@@ -25,7 +25,9 @@ services:
       - traefik.http.services.ws.loadbalancer.server.port=8000
 
   symfony:
-    build: ./symfony
+    build:
+      context: .
+      dockerfile: symfony/Dockerfile
     environment:
       - APP_ENV=dev
     labels:
