@@ -995,6 +995,10 @@ async def shutdown_tasks() -> None:
 async def ws_endpoint(websocket: WebSocket):
     token = websocket.headers.get("authorization", "").replace("Bearer ", "")
     if not token:
+        token = websocket.query_params.get("token", "")
+    if not token:
+        token = websocket.query_params.get("access_token", "")
+    if not token:
         await websocket.close(code=4401)
         return
     try:

@@ -8,3 +8,6 @@ services:
   symfony:
     environment:
       - DEMO_API_KEY=dev-demo-key
+      - DEMO_JWT_PRIVATE_KEY_FILE=/run/keys/dev_private.pem
+    volumes:
+      - ./scripts/keys/dev_private.pem:/run/keys/dev_private.pem:ro
