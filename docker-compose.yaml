@@ -49,6 +49,13 @@ services:
       - WS_EVENTS_TYPE=webhook
       - WS_GATEWAY_BASE_URL=http://gateway:8000
       - WS_GATEWAY_API_KEY=dev-key
+      - WS_TRACING_ENABLED=0
+      - WS_TRACING_EXPORTER=stdout
+      - OTEL_SERVICE_NAME=symfony
+      - OTEL_EXPORTER_OTLP_ENDPOINT=
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - WS_TRACEPARENT_FIELD=traceparent
+      - WS_TRACE_ID_FIELD=trace_id
     labels:
       - traefik.http.routers.api.rule=PathPrefix(`/api`) || PathPrefix(`/internal/ws`)
       - traefik.http.routers.api.entrypoints=web

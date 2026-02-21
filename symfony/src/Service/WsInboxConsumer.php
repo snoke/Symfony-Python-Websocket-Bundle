@@ -4,6 +4,8 @@ namespace App\Service;
 
 use Predis\Client;
 use Psr\Log\LoggerInterface;
+use Snoke\WsBundle\Service\TracingService;
+use OpenTelemetry\API\Trace\SpanKind;
 
 class WsInboxConsumer
 {
@@ -11,7 +13,8 @@ class WsInboxConsumer
 
     public function __construct(
         private MessageInbox $inbox,
-        private LoggerInterface $logger
+        private LoggerInterface $logger,
+        private TracingService $tracing
     ) {
         $this->minLevel = $this->parseLevel($_ENV['WS_CONSUMER_LOG_LEVEL'] ?? 'info');
     }
@@ -86,6 +89,8 @@ class WsInboxConsumer
         if (($event['type'] ?? '') !== 'message_received') {
             return;
         }
+        $traceparentField = $this->tracing->getTraceparentField();
+        $traceIdField = $this->tracing->getTraceIdField();
         $payload = [
             'connection_id' => $event['connection_id'] ?? null,
             'user_id' => $event['user_id'] ?? null,
@@ -93,10 +98,24 @@ class WsInboxConsumer
             'connected_at' => $event['connected_at'] ?? null,
             'message' => $event['message'] ?? null,
             'raw' => $event['raw'] ?? null,
+            'trace_id' => $event[$traceIdField] ?? null,
+            'traceparent' => $event[$traceparentField] ?? null,
             'received_at' => time(),
         ];
-        $this->inbox->setLastMessage($payload);
-        $this->logInfo('ws.inbox.message_received', $payload);
+
+        $scope = $this->tracing->startSpan('ws.inbox.consume', SpanKind::KIND_CONSUMER, [
+            'ws.connection_id' => (string) ($payload['connection_id'] ?? ''),
+            'ws.user_id' => (string) ($payload['user_id'] ?? ''),
+        ], is_string($payload['traceparent']) ? $payload['traceparent'] : null);
+
+        try {
+            $this->inbox->setLastMessage($payload);
+            $this->logInfo('ws.inbox.message_received', $payload);
+        } finally {
+            if ($scope) {
+                $scope->end();
+            }
+        }
     }
 
     /**

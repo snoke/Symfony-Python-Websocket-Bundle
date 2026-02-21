@@ -12,7 +12,14 @@
     "symfony/http-client": "^8.0",
     "symfony/event-dispatcher": "^8.0",
     "predis/predis": "^2.3",
-    "php-amqplib/php-amqplib": "^3.7"
+    "php-amqplib/php-amqplib": "^3.7",
+    "open-telemetry/api": "^1.0",
+    "open-telemetry/sdk": "^1.0",
+    "open-telemetry/context": "^1.0",
+    "open-telemetry/sem-conv": "^1.0",
+    "open-telemetry/exporter-otlp": "^1.0",
+    "open-telemetry/transport-grpc": "^1.0",
+    "google/protobuf": "^3.25"
   },
   "autoload": {
     "psr-4": {

@@ -118,6 +118,7 @@ connected_at: 1700000000
 ```
 message: { type: chat, payload: hello world }
 raw: {"type":"chat","payload":"hello world"}
+traceparent: 00-... (optional, W3C)
 ```
 
 Edge cases:
@@ -139,6 +140,49 @@ Key env vars:
 - `SYMFONY_WEBHOOK_URL` + `SYMFONY_WEBHOOK_SECRET` (terminator)
 - `WS_GATEWAY_BASE_URL` + `WS_GATEWAY_API_KEY` (Symfony → gateway)
 - `WS_REDIS_DSN`, `WS_RABBITMQ_DSN`, … (core/broker)
+
+---
+
+## Observability / Tracing Strategy
+Status: OTel end-to-end tracing implemented (branch `tracing`).
+
+Goal: real spans + propagation across Gateway → Broker → Symfony.
+Includes producer/consumer spans for broker publish + outbox delivery.
+
+Strategies:
+- `none`: no tracing
+- `propagate`: forward trace headers if present
+- `full`: always create spans and propagate
+
+Gateway policies:
+- `TRACING_TRACE_ID_FIELD`
+- `TRACING_HEADER_NAME`
+- `TRACING_SAMPLE_RATE`
+- `TRACING_EXPORTER=stdout|otlp|none`
+- `OTEL_SERVICE_NAME`
+- `OTEL_EXPORTER_OTLP_ENDPOINT`
+- `OTEL_EXPORTER_OTLP_PROTOCOL`
+
+Symfony policies:
+- `WS_TRACING_ENABLED=0|1`
+- `WS_TRACING_EXPORTER=stdout|otlp|none`
+- `WS_TRACEPARENT_FIELD`
+- `WS_TRACE_ID_FIELD`
+- `OTEL_SERVICE_NAME`
+- `OTEL_EXPORTER_OTLP_ENDPOINT`
+- `OTEL_EXPORTER_OTLP_PROTOCOL`
+
+### Tracing Smoke Checks (real)
+1. Start the core stack (with realtime core enabled).
+2. Runtime deps check (gateway + symfony):
+   ```
+   COMPOSE_FILES="docker-compose.yaml docker-compose.local.yaml docker-compose.realtime-core.yaml" \
+     ./scripts/tracing_runtime_check.sh
+   ```
+3. End-to-end propagation check (traceparent + trace_id):
+   ```
+   ./scripts/tracing_e2e_check.sh
+   ```
 
 ---
 

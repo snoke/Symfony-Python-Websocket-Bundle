@@ -41,5 +41,13 @@ snoke_ws:
       exchange: '%env(resolve:default::WS_RABBITMQ_EVENTS_EXCHANGE)%'
       queue: '%env(resolve:default::WS_RABBITMQ_EVENTS_QUEUE)%'
       routing_key: '%env(resolve:default::WS_RABBITMQ_EVENTS_ROUTING_KEY)%'
+  tracing:
+    enabled: false
+    service_name: 'symfony'
+    exporter: 'stdout'
+    otlp_endpoint: ''
+    otlp_protocol: 'http/protobuf'
+    traceparent_field: 'traceparent'
+    trace_id_field: 'trace_id'
   subjects:
     user_prefix: 'user:'

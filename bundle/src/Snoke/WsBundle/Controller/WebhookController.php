@@ -5,16 +5,19 @@ namespace Snoke\WsBundle\Controller;
 use Snoke\WsBundle\Event\WebsocketConnectionClosedEvent;
 use Snoke\WsBundle\Event\WebsocketConnectionEstablishedEvent;
 use Snoke\WsBundle\Event\WebsocketMessageReceivedEvent;
+use Snoke\WsBundle\Service\TracingService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use OpenTelemetry\API\Trace\SpanKind;
 
 class WebhookController
 {
     public function __construct(
         private EventDispatcherInterface $dispatcher,
-        private array $config
+        private array $config,
+        private TracingService $tracing
     ) {}
 
     #[Route('/internal/ws/events', name: 'snoke_ws_events', methods: ['POST'])]
@@ -46,23 +49,36 @@ class WebhookController
         $message = $data['message'] ?? null;
         $raw = (string) ($data['raw'] ?? '');
 
-        if ($type === 'connected') {
+        $traceparent = (string) $request->headers->get('traceparent', '');
+        $traceparentField = $this->tracing->getTraceparentField();
+        if ($traceparent === '' && isset($data[$traceparentField])) {
+            $traceparent = (string) $data[$traceparentField];
+        }
+
+        $scope = $this->tracing->startSpan('ws.webhook', SpanKind::KIND_SERVER, [
+            'ws.event_type' => $type,
+            'ws.connection_id' => $connectionId,
+            'ws.user_id' => $userId,
+        ], $traceparent);
+
+        try {
+            if ($type === 'connected') {
             $this->dispatcher->dispatch(new WebsocketConnectionEstablishedEvent(
                 $connectionId,
                 $userId,
                 $subjects,
                 $connectedAt
             ));
-        }
-        if ($type === 'disconnected') {
+            }
+            if ($type === 'disconnected') {
             $this->dispatcher->dispatch(new WebsocketConnectionClosedEvent(
                 $connectionId,
                 $userId,
                 $subjects,
                 $connectedAt
             ));
-        }
-        if ($type === 'message_received') {
+            }
+            if ($type === 'message_received') {
             $this->dispatcher->dispatch(new WebsocketMessageReceivedEvent(
                 $connectionId,
                 $userId,
@@ -71,6 +87,11 @@ class WebhookController
                 $message,
                 $raw
             ));
+            }
+        } finally {
+            if ($scope) {
+                $scope->end();
+            }
         }
 
         return new JsonResponse(['ok' => true]);
