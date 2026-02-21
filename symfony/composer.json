@@ -3,11 +3,8 @@
   "type": "project",
   "repositories": [
     {
-      "type": "path",
-      "url": "../bundle",
-      "options": {
-        "symlink": true
-      }
+      "type": "vcs",
+      "url": "https://github.com/snoke/ws-bundle.git"
     }
   ],
   "require": {

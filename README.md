@@ -56,30 +56,20 @@ You only switch the compose files.
 If you only want to **use** the stack (not develop it), you still don't need to modify this repo.
 
 ### 1) Symfony bundle dependency
-The bundle lives in `bundle/` in this repo (root has no `composer.json`), so **use a path repo**:
+The bundle is now its own repo. Add it as VCS repo, then require it:
 
-1. Clone this repo somewhere next to your project:
-   ```
-   git clone https://github.com/snoke/Symfony-Python-Realtime-Stack.git
-   ```
-2. In your project `composer.json`:
+1. In your project `composer.json`:
    ```
    {
      "repositories": [
-       { "type": "path", "url": "../Symfony-Python-Realtime-Stack/bundle", "options": { "symlink": true } }
-     ],
-     "require": {
-       "snoke/ws-bundle": "*"
-     }
+       { "type": "vcs", "url": "https://github.com/snoke/ws-bundle.git" }
+     ]
    }
    ```
-3. Install:
+2. Install:
    ```
-   composer update snoke/ws-bundle
+   composer require snoke/ws-bundle:dev-main
    ```
-
-> Note: `composer require snoke/ws-bundle:dev-main` fails directly against this repo
-> because the `composer.json` is inside `/bundle`. Use the path repo as shown above.
 
 ### 2) Start the gateway stack
 Run the gateway + brokers stack from this repo (as a separate compose):

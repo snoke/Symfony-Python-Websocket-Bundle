@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "4f4368369f81aba76c07f9128e50cd2f",
+    "content-hash": "05612e12760c52e8bbd2c8e486095a5d",
     "packages": [
         {
             "name": "brick/math",
@@ -1739,10 +1739,16 @@
         {
             "name": "snoke/ws-bundle",
             "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/snoke/ws-bundle.git",
+                "reference": "5435858e83832b7a30898f3c0540872a6def1e39"
+            },
             "dist": {
-                "type": "path",
-                "url": "../bundle",
-                "reference": "fbc5692825c907573d505294ed8da511ec1ffe3c"
+                "type": "zip",
+                "url": "https://api.github.com/repos/snoke/ws-bundle/zipball/5435858e83832b7a30898f3c0540872a6def1e39",
+                "reference": "5435858e83832b7a30898f3c0540872a6def1e39",
+                "shasum": ""
             },
             "require": {
                 "google/protobuf": "^3.25",
@@ -1764,6 +1770,7 @@
                 "symfony/http-kernel": "^8.0",
                 "symfony/routing": "^8.0"
             },
+            "default-branch": true,
             "type": "symfony-bundle",
             "extra": {
                 "symfony": {
@@ -1775,10 +1782,11 @@
                     "Snoke\\WsBundle\\": "src/Snoke/WsBundle/"
                 }
             },
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/snoke/ws-bundle/tree/main",
+                "issues": "https://github.com/snoke/ws-bundle/issues"
+            },
+            "time": "2026-02-21T16:20:42+00:00"
         },
         {
             "name": "symfony/cache",
