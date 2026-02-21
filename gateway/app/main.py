@@ -7,13 +7,13 @@ import hashlib
 import hmac
 import logging
 import sys
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import aio_pika
 import httpx
 import jwt
 import redis.asyncio as redis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from jwt import PyJWKClient
 from aio_pika import ExchangeType
@@ -71,6 +71,20 @@ REPLAY_STRATEGY = os.getenv("REPLAY_STRATEGY", "none").lower()
 REPLAY_RETENTION_SECONDS = int(os.getenv("REPLAY_RETENTION_SECONDS", "0"))
 REPLAY_MAXLEN = int(os.getenv("REPLAY_MAXLEN", "0"))
 REPLAY_SNAPSHOT_SECONDS = int(os.getenv("REPLAY_SNAPSHOT_SECONDS", "0"))
+REPLAY_API_KEY = os.getenv("REPLAY_API_KEY", "")
+REPLAY_RATE_LIMIT_STRATEGY = os.getenv("REPLAY_RATE_LIMIT_STRATEGY", "in_memory").lower()
+REPLAY_RATE_LIMIT_PER_MINUTE = int(os.getenv("REPLAY_RATE_LIMIT_PER_MINUTE", "10"))
+REPLAY_RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("REPLAY_RATE_LIMIT_WINDOW_SECONDS", "60"))
+REPLAY_RATE_LIMIT_REDIS_DSN = os.getenv("REPLAY_RATE_LIMIT_REDIS_DSN", REDIS_DSN)
+REPLAY_RATE_LIMIT_PREFIX = os.getenv("REPLAY_RATE_LIMIT_PREFIX", "replay:rate:")
+REPLAY_RATE_LIMIT_KEY = os.getenv("REPLAY_RATE_LIMIT_KEY", "api_key_or_ip").lower()
+REPLAY_IDEMPOTENCY_STRATEGY = os.getenv("REPLAY_IDEMPOTENCY_STRATEGY", "none").lower()
+REPLAY_IDEMPOTENCY_TTL_SECONDS = int(os.getenv("REPLAY_IDEMPOTENCY_TTL_SECONDS", "900"))
+REPLAY_IDEMPOTENCY_REDIS_DSN = os.getenv("REPLAY_IDEMPOTENCY_REDIS_DSN", REPLAY_RATE_LIMIT_REDIS_DSN)
+REPLAY_IDEMPOTENCY_PREFIX = os.getenv("REPLAY_IDEMPOTENCY_PREFIX", "replay:idempotency:")
+REPLAY_IDEMPOTENCY_HEADER = os.getenv("REPLAY_IDEMPOTENCY_HEADER", "Idempotency-Key")
+REPLAY_IDEMPOTENCY_PAYLOAD_FIELD = os.getenv("REPLAY_IDEMPOTENCY_PAYLOAD_FIELD", "idempotency_key")
+REPLAY_AUDIT_LOG = os.getenv("REPLAY_AUDIT_LOG", "1").lower() in ("1", "true", "yes", "on")
 WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
 WS_RATE_LIMIT_BURST = float(os.getenv("WS_RATE_LIMIT_BURST", "20"))
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
@@ -84,6 +98,18 @@ if REPLAY_MAXLEN < 0:
     REPLAY_MAXLEN = 0
 if REPLAY_SNAPSHOT_SECONDS < 0:
     REPLAY_SNAPSHOT_SECONDS = 0
+if REPLAY_RATE_LIMIT_PER_MINUTE < 0:
+    REPLAY_RATE_LIMIT_PER_MINUTE = 0
+if REPLAY_RATE_LIMIT_WINDOW_SECONDS <= 0:
+    REPLAY_RATE_LIMIT_WINDOW_SECONDS = 60
+if REPLAY_RATE_LIMIT_STRATEGY not in ("in_memory", "redis", "none"):
+    REPLAY_RATE_LIMIT_STRATEGY = "in_memory"
+if REPLAY_RATE_LIMIT_KEY not in ("api_key", "ip", "api_key_or_ip", "api_key_and_ip"):
+    REPLAY_RATE_LIMIT_KEY = "api_key_or_ip"
+if REPLAY_IDEMPOTENCY_STRATEGY not in ("none", "in_memory", "redis"):
+    REPLAY_IDEMPOTENCY_STRATEGY = "none"
+if REPLAY_IDEMPOTENCY_TTL_SECONDS < 0:
+    REPLAY_IDEMPOTENCY_TTL_SECONDS = 0
 
 logger = logging.getLogger("gateway")
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -101,6 +127,12 @@ metrics: Dict[str, int] = {
     "webhook_publish_total": 0,
     "webhook_publish_failed_total": 0,
     "rabbitmq_replay_total": 0,
+    "replay_api_requests_total": 0,
+    "replay_api_denied_total": 0,
+    "replay_api_rate_limited_total": 0,
+    "replay_api_idempotent_total": 0,
+    "replay_api_success_total": 0,
+    "replay_api_errors_total": 0,
 }
 
 redis_publish_client: Optional[redis.Redis] = None
@@ -118,6 +150,128 @@ def _log(event: str, **fields: Any) -> None:
         logger.info(json.dumps(payload, separators=(",", ":"), sort_keys=True))
     else:
         logger.info("%s %s", event, payload)
+
+def _audit(event: str, **fields: Any) -> None:
+    if REPLAY_AUDIT_LOG:
+        _log(event, **fields)
+
+def _normalize_key(value: str) -> str:
+    value = value.strip()
+    if len(value) <= 128:
+        return value
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+def _rate_limit_identity(api_key: str, caller_ip: str) -> str:
+    if REPLAY_RATE_LIMIT_KEY == "api_key":
+        return api_key or caller_ip
+    if REPLAY_RATE_LIMIT_KEY == "ip":
+        return caller_ip
+    if REPLAY_RATE_LIMIT_KEY == "api_key_and_ip":
+        if api_key:
+            return f"{api_key}:{caller_ip}"
+        return caller_ip
+    return api_key or caller_ip
+
+class InMemoryRateLimiter:
+    def __init__(self) -> None:
+        self._buckets: Dict[str, List[float]] = {}
+        self._lock = asyncio.Lock()
+
+    async def allow(self, key: str, limit: int, window_seconds: int) -> bool:
+        if limit <= 0:
+            return True
+        now = time.time()
+        cutoff = now - window_seconds
+        async with self._lock:
+            bucket = self._buckets.get(key, [])
+            bucket = [ts for ts in bucket if ts >= cutoff]
+            if len(bucket) >= limit:
+                self._buckets[key] = bucket
+                return False
+            bucket.append(now)
+            self._buckets[key] = bucket
+            return True
+
+class RedisRateLimiter:
+    def __init__(self, client: redis.Redis, prefix: str) -> None:
+        self._client = client
+        self._prefix = prefix
+
+    async def allow(self, key: str, limit: int, window_seconds: int) -> bool:
+        if limit <= 0:
+            return True
+        window = int(time.time() // window_seconds)
+        redis_key = f"{self._prefix}{key}:{window}"
+        count = await self._client.incr(redis_key)
+        if count == 1:
+            await self._client.expire(redis_key, window_seconds)
+        return count <= limit
+
+class NullIdempotencyStore:
+    async def get(self, key: str) -> Optional[int]:
+        return None
+
+    async def set(self, key: str, value: int, ttl_seconds: int) -> None:
+        return None
+
+class InMemoryIdempotencyStore:
+    def __init__(self) -> None:
+        self._items: Dict[str, Tuple[int, float]] = {}
+        self._lock = asyncio.Lock()
+
+    async def get(self, key: str) -> Optional[int]:
+        now = time.time()
+        async with self._lock:
+            if key not in self._items:
+                return None
+            value, expires_at = self._items[key]
+            if expires_at and now > expires_at:
+                self._items.pop(key, None)
+                return None
+            return value
+
+    async def set(self, key: str, value: int, ttl_seconds: int) -> None:
+        expires_at = time.time() + ttl_seconds if ttl_seconds > 0 else 0.0
+        async with self._lock:
+            self._items[key] = (value, expires_at)
+
+class RedisIdempotencyStore:
+    def __init__(self, client: redis.Redis, prefix: str) -> None:
+        self._client = client
+        self._prefix = prefix
+
+    async def get(self, key: str) -> Optional[int]:
+        value = await self._client.get(f"{self._prefix}{key}")
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    async def set(self, key: str, value: int, ttl_seconds: int) -> None:
+        redis_key = f"{self._prefix}{key}"
+        if ttl_seconds > 0:
+            await self._client.setex(redis_key, ttl_seconds, str(value))
+        else:
+            await self._client.set(redis_key, str(value))
+
+def _build_rate_limiter() -> InMemoryRateLimiter | RedisRateLimiter:
+    if REPLAY_RATE_LIMIT_STRATEGY == "redis" and REPLAY_RATE_LIMIT_REDIS_DSN:
+        client = redis.from_url(REPLAY_RATE_LIMIT_REDIS_DSN, decode_responses=True)
+        return RedisRateLimiter(client, REPLAY_RATE_LIMIT_PREFIX)
+    return InMemoryRateLimiter()
+
+def _build_idempotency_store() -> NullIdempotencyStore | InMemoryIdempotencyStore | RedisIdempotencyStore:
+    if REPLAY_IDEMPOTENCY_STRATEGY == "redis" and REPLAY_IDEMPOTENCY_REDIS_DSN:
+        client = redis.from_url(REPLAY_IDEMPOTENCY_REDIS_DSN, decode_responses=True)
+        return RedisIdempotencyStore(client, REPLAY_IDEMPOTENCY_PREFIX)
+    if REPLAY_IDEMPOTENCY_STRATEGY == "in_memory":
+        return InMemoryIdempotencyStore()
+    return NullIdempotencyStore()
+
+replay_rate_limiter = _build_rate_limiter()
+replay_idempotency_store = _build_idempotency_store()
 
 class Connection:
     def __init__(self, websocket: WebSocket, user_id: str, subjects: List[str]):
@@ -524,49 +678,86 @@ async def publish(payload: Dict[str, Any]):
     return JSONResponse({"sent": sent})
 
 @app.post("/internal/replay/rabbitmq")
-async def replay_rabbitmq(payload: Dict[str, Any]):
-    api_key = payload.get("api_key") or ""
-    if GATEWAY_API_KEY and api_key != GATEWAY_API_KEY:
+async def replay_rabbitmq(payload: Dict[str, Any], request: Request):
+    metrics["replay_api_requests_total"] += 1
+    request_id = request.headers.get("X-Request-Id") or str(uuid.uuid4())
+    caller_ip = request.client.host if request.client else "unknown"
+    api_key = payload.get("api_key") or request.headers.get("X-API-Key") or request.headers.get("X-Api-Key") or ""
+    expected_key = REPLAY_API_KEY or GATEWAY_API_KEY
+
+    if expected_key and api_key != expected_key:
+        metrics["replay_api_denied_total"] += 1
+        _audit("replay_api_denied", request_id=request_id, caller_ip=caller_ip)
         raise HTTPException(status_code=401, detail="invalid api key")
     if not RABBITMQ_DSN:
+        metrics["replay_api_errors_total"] += 1
+        _audit("replay_api_error", request_id=request_id, caller_ip=caller_ip, error="rabbitmq not configured")
         raise HTTPException(status_code=500, detail="rabbitmq not configured")
+
+    identity = _normalize_key(_rate_limit_identity(api_key, caller_ip) or caller_ip)
+    if REPLAY_RATE_LIMIT_STRATEGY != "none" and REPLAY_RATE_LIMIT_PER_MINUTE > 0:
+        allowed = await replay_rate_limiter.allow(identity, REPLAY_RATE_LIMIT_PER_MINUTE, REPLAY_RATE_LIMIT_WINDOW_SECONDS)
+        if not allowed:
+            metrics["replay_api_rate_limited_total"] += 1
+            _audit("replay_api_rate_limited", request_id=request_id, caller_ip=caller_ip, identity=identity)
+            raise HTTPException(status_code=429, detail="rate limit exceeded")
+
+    idempotency_key = request.headers.get(REPLAY_IDEMPOTENCY_HEADER, "") or payload.get(REPLAY_IDEMPOTENCY_PAYLOAD_FIELD, "")
+    idempotency_key = _normalize_key(idempotency_key) if idempotency_key else ""
+    if idempotency_key:
+        cached = await replay_idempotency_store.get(idempotency_key)
+        if cached is not None:
+            metrics["replay_api_idempotent_total"] += 1
+            _audit("replay_api_idempotent", request_id=request_id, caller_ip=caller_ip, replayed=cached)
+            return JSONResponse({"replayed": cached, "idempotent": True})
 
     limit = int(payload.get("limit") or RABBITMQ_REPLAY_MAX_BATCH)
     if limit <= 0:
         return JSONResponse({"replayed": 0})
+    limit = min(limit, RABBITMQ_REPLAY_MAX_BATCH)
 
     target_exchange = RABBITMQ_REPLAY_TARGET_EXCHANGE or RABBITMQ_INBOX_EXCHANGE
     target_routing_key = RABBITMQ_REPLAY_TARGET_ROUTING_KEY or RABBITMQ_INBOX_ROUTING_KEY
 
     replayed = 0
-    connection = await aio_pika.connect_robust(RABBITMQ_DSN)
-    async with connection:
-        channel = await connection.channel()
-        dlq_exchange = await channel.declare_exchange(RABBITMQ_DLQ_EXCHANGE, ExchangeType.DIRECT, durable=True)
-        dlq_queue = await channel.declare_queue(RABBITMQ_DLQ_QUEUE, durable=True)
-        await dlq_queue.bind(dlq_exchange, routing_key=RABBITMQ_DLQ_QUEUE)
+    try:
+        connection = await aio_pika.connect_robust(RABBITMQ_DSN)
+        async with connection:
+            channel = await connection.channel()
+            dlq_exchange = await channel.declare_exchange(RABBITMQ_DLQ_EXCHANGE, ExchangeType.DIRECT, durable=True)
+            dlq_queue = await channel.declare_queue(RABBITMQ_DLQ_QUEUE, durable=True)
+            await dlq_queue.bind(dlq_exchange, routing_key=RABBITMQ_DLQ_QUEUE)
 
-        exchange = await channel.declare_exchange(target_exchange, ExchangeType.DIRECT, durable=True)
+            exchange = await channel.declare_exchange(target_exchange, ExchangeType.DIRECT, durable=True)
 
-        while replayed < limit:
-            message = await dlq_queue.get(fail=False)
-            if message is None:
-                break
-            try:
-                await exchange.publish(
-                    aio_pika.Message(
-                        body=message.body,
-                        headers={**(message.headers or {}), "replayed": True},
-                    ),
-                    routing_key=target_routing_key,
-                )
-                await message.ack()
-                replayed += 1
-            except Exception:
-                await message.nack(requeue=True)
-                break
+            while replayed < limit:
+                message = await dlq_queue.get(fail=False)
+                if message is None:
+                    break
+                try:
+                    await exchange.publish(
+                        aio_pika.Message(
+                            body=message.body,
+                            headers={**(message.headers or {}), "replayed": True},
+                        ),
+                        routing_key=target_routing_key,
+                    )
+                    await message.ack()
+                    replayed += 1
+                except Exception:
+                    await message.nack(requeue=True)
+                    break
+    except Exception as exc:
+        metrics["replay_api_errors_total"] += 1
+        _audit("replay_api_error", request_id=request_id, caller_ip=caller_ip, error=str(exc))
+        raise HTTPException(status_code=500, detail="replay failed") from exc
+
+    if idempotency_key:
+        await replay_idempotency_store.set(idempotency_key, replayed, REPLAY_IDEMPOTENCY_TTL_SECONDS)
 
     metrics["rabbitmq_replay_total"] += replayed
+    metrics["replay_api_success_total"] += 1
+    _audit("replay_api_success", request_id=request_id, caller_ip=caller_ip, replayed=replayed, limit=limit)
     return JSONResponse({"replayed": replayed})
 
 @app.get("/metrics")

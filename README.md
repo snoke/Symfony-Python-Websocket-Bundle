@@ -143,7 +143,7 @@ Key env vars:
 ---
 
 ## Replay / Persistence Strategy
-Status: implemented for Redis streams + RabbitMQ minimal + replay API (branch `replay-strategy-hardened`).
+Status: implemented for Redis streams + RabbitMQ minimal + replay API hardening (branch `replay-strategy`).
 
 Goal: define replay behavior for brokered events without hard-coding retention.
 
@@ -165,10 +165,36 @@ RabbitMQ minimal replay (durable + TTL/DLX):
 - `RABBITMQ_EVENTS_QUEUE_TTL_MS`
 
 RabbitMQ robust replay (API):
-- `POST /internal/replay/rabbitmq` with `{ api_key, limit }`
+- `POST /internal/replay/rabbitmq` with `X-API-Key` header (or `{ api_key, limit }` payload)
 - `RABBITMQ_REPLAY_TARGET_EXCHANGE`
 - `RABBITMQ_REPLAY_TARGET_ROUTING_KEY`
 - `RABBITMQ_REPLAY_MAX_BATCH`
+
+Replay API hardening (defaults, configurable):
+- API key required: `REPLAY_API_KEY` (fallback to `GATEWAY_API_KEY`)
+- Rate limiting: `REPLAY_RATE_LIMIT_STRATEGY=in_memory|redis|none`
+- Idempotency (optional): `REPLAY_IDEMPOTENCY_STRATEGY=none|in_memory|redis`
+- Audit logging: `REPLAY_AUDIT_LOG=1`
+
+Example request:
+```
+curl -X POST http://localhost:8180/internal/replay/rabbitmq \\
+  -H "X-API-Key: $REPLAY_API_KEY" \\
+  -H "Idempotency-Key: replay-2025-01-01" \\
+  -H "Content-Type: application/json" \\
+  -d '{"limit":100}'
+```
+
+RabbitMQ Policies (optional, infra-level):
+```
+rabbitmqctl set_policy ws-replay-ttl \"^ws\\\\.(inbox|events)$\" '{\"message-ttl\":600000,\"max-length\":100000,\"dead-letter-exchange\":\"ws.dlq\"}' --apply-to queues
+rabbitmqctl set_policy ws-replay-lazy \"^ws\\\\.(inbox|events)$\" '{\"queue-mode\":\"lazy\"}' --apply-to queues
+```
+
+Monitoring / Alarms (suggested):
+- Track DLQ depth + inbox/event queue depth.
+- Alert on spikes in `rabbitmq_replay_total` or repeated replays.
+- Observe replay API rate limits via `/metrics` counters.
 
 ---
 
