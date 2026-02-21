@@ -42,12 +42,12 @@ snoke_ws:
       queue: '%env(resolve:default::WS_RABBITMQ_EVENTS_QUEUE)%'
       routing_key: '%env(resolve:default::WS_RABBITMQ_EVENTS_ROUTING_KEY)%'
   tracing:
-    enabled: '%env(bool:default::WS_TRACING_ENABLED)%'
-    service_name: '%env(resolve:default::OTEL_SERVICE_NAME)%'
-    exporter: '%env(resolve:default::WS_TRACING_EXPORTER)%'
+    enabled: '%env(bool:default:0:WS_TRACING_ENABLED)%'
+    service_name: '%env(resolve:default:symfony:OTEL_SERVICE_NAME)%'
+    exporter: '%env(resolve:default:stdout:WS_TRACING_EXPORTER)%'
     otlp_endpoint: '%env(resolve:default::OTEL_EXPORTER_OTLP_ENDPOINT)%'
-    otlp_protocol: '%env(resolve:default::OTEL_EXPORTER_OTLP_PROTOCOL)%'
-    traceparent_field: '%env(resolve:default::WS_TRACEPARENT_FIELD)%'
-    trace_id_field: '%env(resolve:default::WS_TRACE_ID_FIELD)%'
+    otlp_protocol: '%env(resolve:default:http/protobuf:OTEL_EXPORTER_OTLP_PROTOCOL)%'
+    traceparent_field: '%env(resolve:default:traceparent:WS_TRACEPARENT_FIELD)%'
+    trace_id_field: '%env(resolve:default:trace_id:WS_TRACE_ID_FIELD)%'
   subjects:
     user_prefix: 'user:'
