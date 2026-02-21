@@ -50,6 +50,51 @@ You only switch the compose files.
    SYMFONY_WEBHOOK_URL=http://symfony:8000/internal/ws/events
    ```
 
+---
+
+## Use In Your Own Project (consumer setup)
+If you only want to **use** the stack (not develop it), you still don't need to modify this repo.
+
+### 1) Symfony bundle dependency
+The bundle lives in `bundle/` in this repo (root has no `composer.json`), so **use a path repo**:
+
+1. Clone this repo somewhere next to your project:
+   ```
+   git clone https://github.com/snoke/Symfony-Python-Realtime-Stack.git
+   ```
+2. In your project `composer.json`:
+   ```
+   {
+     "repositories": [
+       { "type": "path", "url": "../Symfony-Python-Realtime-Stack/bundle", "options": { "symlink": true } }
+     ],
+     "require": {
+       "snoke/ws-bundle": "*"
+     }
+   }
+   ```
+3. Install:
+   ```
+   composer update snoke/ws-bundle
+   ```
+
+> Note: `composer require snoke/ws-bundle:dev-main` fails directly against this repo
+> because the `composer.json` is inside `/bundle`. Use the path repo as shown above.
+
+### 2) Start the gateway stack
+Run the gateway + brokers stack from this repo (as a separate compose):
+
+- Terminator:
+  ```
+  docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml up --build
+  ```
+- Core:
+  ```
+  docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml up --build
+  ```
+
+Then point your Symfony app to the gateway (`WS_GATEWAY_BASE_URL`, `WS_GATEWAY_API_KEY`, etc.).
+
 ### Core stack details
 What you get in `core` mode:
 - Stateless gateway publishes events to broker(s)
