@@ -143,7 +143,7 @@ Key env vars:
 ---
 
 ## Presence Strategy
-Status: implemented in gateway + Symfony interpretation (branch `presence-strategy`).
+Status: gateway + Symfony interpretation + Symfony writer (branch `presence-strategy-ownership`).
 
 Goal: make presence consistency configurable via strategy pattern and allow Symfony-specific interpretation.
 
@@ -164,6 +164,13 @@ Symfony interpretation policies:
 - `WS_PRESENCE_HEARTBEAT_SECONDS`
 - `WS_PRESENCE_GRACE_SECONDS`
 - `WS_PRESENCE_USE_LAST_SEEN`
+
+Symfony writer (ownership) policies:
+- `WS_PRESENCE_WRITER_TYPE=none|redis`
+- `WS_PRESENCE_WRITER_TTL_SECONDS`
+- `WS_PRESENCE_WRITER_REFRESH_ON_MESSAGE`
+
+Note: if Symfony owns presence, disable gateway presence updates to avoid double-writes.
 
 ---
 
