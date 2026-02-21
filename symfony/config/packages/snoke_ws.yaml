@@ -46,7 +46,7 @@ snoke_ws:
     service_name: '%env(resolve:default:symfony:OTEL_SERVICE_NAME)%'
     exporter: '%env(resolve:default:stdout:WS_TRACING_EXPORTER)%'
     otlp_endpoint: '%env(resolve:default::OTEL_EXPORTER_OTLP_ENDPOINT)%'
-    otlp_protocol: '%env(resolve:default:http/protobuf:OTEL_EXPORTER_OTLP_PROTOCOL)%'
+    otlp_protocol: '%env(resolve:default:http:OTEL_EXPORTER_OTLP_PROTOCOL)%'
     traceparent_field: '%env(resolve:default:traceparent:WS_TRACEPARENT_FIELD)%'
     trace_id_field: '%env(resolve:default:trace_id:WS_TRACE_ID_FIELD)%'
   subjects:
