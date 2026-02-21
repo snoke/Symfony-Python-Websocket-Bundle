@@ -1,3 +1,7 @@
+parameters:
+  ws_presence_interpretation_strategy_default: 'none'
+  ws_presence_writer_type_default: 'none'
+
 services:
   _defaults:
     autowire: true
