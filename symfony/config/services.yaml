@@ -1,3 +1,12 @@
+parameters:
+  ws_tracing_enabled_default: "0"
+  ws_tracing_exporter_default: "stdout"
+  ws_tracing_service_name_default: "symfony"
+  ws_tracing_otlp_protocol_default: "http"
+  ws_tracing_otlp_endpoint_default: ""
+  ws_traceparent_field_default: "traceparent"
+  ws_trace_id_field_default: "trace_id"
+
 services:
   _defaults:
     autowire: true
