@@ -142,6 +142,24 @@ Key env vars:
 
 ---
 
+## Presence Strategy (planned)
+Status: design-only (not implemented yet in main).
+
+Goal: make presence consistency configurable via strategy pattern.
+
+Strategies:
+- `ttl`: rely on Redis TTL + periodic refresh
+- `heartbeat`: client heartbeats drive presence updates
+- `session`: explicit connect/disconnect lifecycle only
+
+Policies:
+- `PRESENCE_TTL_SECONDS`
+- `PRESENCE_HEARTBEAT_SECONDS`
+- `PRESENCE_GRACE_SECONDS`
+- `PRESENCE_REFRESH_ON_MESSAGE`
+
+---
+
 ## Production Quickstart
 1. Set env: `cp .env.example .env`
 2. Create ACME storage:
