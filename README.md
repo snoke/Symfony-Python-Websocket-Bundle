@@ -55,7 +55,9 @@ You only switch the compose files.
 ---
 
 ## Use In Your Own Project (consumer setup)
-If you only want to **use** the stack (not develop it), you still don't need to modify this repo.
+If you only want to **use** the stack (not develop it), you need **two repos**:
+1. Your Symfony app + the bundle (`snoke/ws-bundle`).
+2. This gateway repo (for the Docker Compose stack).
 
 ### 1) Symfony bundle dependency
 The bundle is now its own repo. Add it as VCS repo, then require it:
@@ -73,8 +75,13 @@ The bundle is now its own repo. Add it as VCS repo, then require it:
    composer require snoke/ws-bundle:dev-main
    ```
 
-### 2) Start the gateway stack
-Run the gateway + brokers stack from this repo (as a separate compose):
+### 2) Start the gateway stack (this repo)
+Clone this repo and run the gateway + brokers stack **from here** (the compose files live here):
+
+```
+git clone https://github.com/snoke/Symfony-Python-Realtime-Stack.git
+cd Symfony-Python-Realtime-Stack
+```
 
 - Terminator:
   ```
@@ -119,6 +126,11 @@ Verify core wiring quickly:
 
 Demo mapping (core): `message_received` → `chat` is handled by `ChatDemoListener`
 (publisher uses subjects like `user:{id}`).
+
+---
+
+## Roadmap / TODO
+- After edge‑case testing and load testing, publish a Composer release and prebuilt Docker images (gateway + demo).
 
 ---
 
