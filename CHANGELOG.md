@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - (nothing yet)
 
 ### Changed
-- (nothing yet)
+- Docs: clarify pre-release tagging for Composer and Docker (no stable/latest tags yet).
 
 ## [0.1.1] - 2026-02-21
 ### Added

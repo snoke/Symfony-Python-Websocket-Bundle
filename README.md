@@ -55,25 +55,17 @@ You only switch the compose files.
 ---
 
 ## Use In Your Own Project (consumer setup)
-Temporary note: until we publish stable Composer + Docker images, you need **two repos** even if you only want to **use** the stack (not develop it):
+Temporary note: until we publish stable Composer + Docker images, you still need **two repos** even if you only want to **use** the stack:
 1. Your Symfony app + the bundle (`snoke/ws-bundle`).
 2. This gateway repo (for the Docker Compose stack).
 
-### 1) Symfony bundle dependency
-The bundle is now its own repo. Add it as VCS repo, then require it:
-
-1. In your project `composer.json`:
-   ```
-   {
-     "repositories": [
-       { "type": "vcs", "url": "https://github.com/snoke/ws-bundle.git" }
-     ]
-   }
-   ```
-2. Install:
-   ```
-   composer require snoke/ws-bundle:dev-main
-   ```
+### 1) Symfony bundle dependency (pre-release)
+Add the bundle repo and install it in one go:
+```
+composer config repositories.snoke_ws_bundle vcs https://github.com/snoke/ws-bundle.git
+composer require snoke/ws-bundle:0.1.1-alpha.1
+```
+If you want the latest changes, use `dev-main`.
 
 ### 2) Start the gateway stack (this repo)
 Clone this repo and run the gateway + brokers stack **from here** (the compose files live here):
@@ -93,6 +85,9 @@ cd Symfony-Python-Realtime-Stack
   ```
 
 Then point your Symfony app to the gateway (`WS_GATEWAY_BASE_URL`, `WS_GATEWAY_API_KEY`, etc.).
+
+Note: once Docker images + Composer packages are published, this section will shrink to a simple
+`composer require ...` plus running the gateway image by tag (no repo clone).
 
 ### Core stack details
 What you get in `core` mode:
@@ -131,6 +126,10 @@ Demo mapping (core): `message_received` → `chat` is handled by `ChatDemoListen
 
 ## Roadmap / TODO
 - After edge‑case testing and load testing, publish a Composer release and prebuilt Docker images (gateway + demo).
+
+## Versioning Notes (Pre‑Release)
+- Composer: use immutable pre‑release tags (e.g. `0.1.1-alpha.1`) instead of `dev-main` when you want a pinned version.
+- Docker: use immutable pre‑release tags (e.g. `:0.1.1-alpha.1`). Avoid `:latest` for now; an `:edge` tag is fine for rolling builds.
 
 ---
 
