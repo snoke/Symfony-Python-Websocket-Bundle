@@ -142,8 +142,8 @@ Key env vars:
 
 ---
 
-## Presence Strategy (planned)
-Status: design-only (not implemented yet in main).
+## Presence Strategy
+Status: implemented in gateway (branch `presence-strategy`).
 
 Goal: make presence consistency configurable via strategy pattern.
 
