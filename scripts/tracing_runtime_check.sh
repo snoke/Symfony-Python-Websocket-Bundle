@@ -24,7 +24,7 @@ then
 fi
 
 echo "Checking symfony OpenTelemetry runtime..."
-if ! docker compose "${COMPOSE_ARGS[@]}" exec -T symfony php -r "exit(class_exists('OpenTelemetry\\\\SDK\\\\Trace\\\\TracerProvider') ? 0 : 1);"; then
+if ! docker compose "${COMPOSE_ARGS[@]}" exec -T symfony php -r "require '/app/vendor/autoload.php'; exit(class_exists('OpenTelemetry\\\\SDK\\\\Trace\\\\TracerProvider') ? 0 : 1);"; then
   echo "Symfony OTel check failed. Is the symfony container running?"
   exit 1
 fi
