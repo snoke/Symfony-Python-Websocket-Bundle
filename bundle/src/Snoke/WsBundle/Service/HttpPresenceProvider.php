@@ -4,13 +4,18 @@ namespace Snoke\WsBundle\Service;
 
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Snoke\WsBundle\Contract\PresenceProviderInterface;
+use Snoke\WsBundle\Service\PresenceInterpreter;
 
 class HttpPresenceProvider implements PresenceProviderInterface
 {
+    private PresenceInterpreter $interpreter;
+
     public function __construct(
         private HttpClientInterface $client,
         private array $config
-    ) {}
+    ) {
+        $this->interpreter = new PresenceInterpreter($config);
+    }
 
     public function listConnections(?string $subjectKey = null, ?string $userId = null): array
     {
@@ -26,7 +31,8 @@ class HttpPresenceProvider implements PresenceProviderInterface
             'query' => $query,
             'timeout' => $http['timeout_seconds'],
         ]);
-        return $response->toArray(false);
+        $data = $response->toArray(false);
+        return $this->applyInterpretation($data);
     }
 
     public function listConnectionsForUser(string $userId): array
@@ -36,6 +42,16 @@ class HttpPresenceProvider implements PresenceProviderInterface
         $response = $this->client->request('GET', rtrim($http['base_url'], '/').$path, [
             'timeout' => $http['timeout_seconds'],
         ]);
-        return $response->toArray(false);
+        $data = $response->toArray(false);
+        return $this->applyInterpretation($data);
+    }
+
+    private function applyInterpretation(array $data): array
+    {
+        if (!isset($data['connections']) || !is_array($data['connections'])) {
+            return $data;
+        }
+        $data['connections'] = $this->interpreter->filterConnections($data['connections']);
+        return $data;
     }
 }

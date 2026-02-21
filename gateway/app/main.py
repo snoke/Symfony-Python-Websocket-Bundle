@@ -73,6 +73,10 @@ REDIS_EVENTS_STREAM = os.getenv("REDIS_EVENTS_STREAM", "ws.events")
 PRESENCE_REDIS_DSN = os.getenv("PRESENCE_REDIS_DSN", REDIS_DSN)
 PRESENCE_REDIS_PREFIX = os.getenv("PRESENCE_REDIS_PREFIX", "presence:")
 PRESENCE_TTL_SECONDS = int(os.getenv("PRESENCE_TTL_SECONDS", "120"))
+PRESENCE_STRATEGY = os.getenv("PRESENCE_STRATEGY", "ttl").lower()
+PRESENCE_HEARTBEAT_SECONDS = int(os.getenv("PRESENCE_HEARTBEAT_SECONDS", "30"))
+PRESENCE_GRACE_SECONDS = int(os.getenv("PRESENCE_GRACE_SECONDS", "15"))
+PRESENCE_REFRESH_ON_MESSAGE = os.getenv("PRESENCE_REFRESH_ON_MESSAGE", "1").lower() in ("1", "true", "yes")
 WEBHOOK_RETRY_ATTEMPTS = int(os.getenv("WEBHOOK_RETRY_ATTEMPTS", "3"))
 WEBHOOK_RETRY_BASE_SECONDS = float(os.getenv("WEBHOOK_RETRY_BASE_SECONDS", "0.5"))
 WEBHOOK_TIMEOUT_SECONDS = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "5"))
@@ -146,6 +150,12 @@ if ORDERING_SUBJECT_SOURCE not in ("user", "subject"):
     ORDERING_SUBJECT_SOURCE = "user"
 if ORDERING_PARTITION_MODE not in ("none", "suffix"):
     ORDERING_PARTITION_MODE = "none"
+if PRESENCE_STRATEGY not in ("ttl", "heartbeat", "session"):
+    PRESENCE_STRATEGY = "ttl"
+if PRESENCE_HEARTBEAT_SECONDS < 0:
+    PRESENCE_HEARTBEAT_SECONDS = 0
+if PRESENCE_GRACE_SECONDS < 0:
+    PRESENCE_GRACE_SECONDS = 0
 
 logger = logging.getLogger("gateway")
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -661,9 +671,17 @@ async def _publish_connection_event(event_type: str, conn: Connection) -> None:
     else:
         await _publish_event(event_type, REDIS_EVENTS_STREAM, rabbit_events_exchange, RABBITMQ_EVENTS_ROUTING_KEY, payload)
 
+def _presence_effective_ttl() -> int:
+    if PRESENCE_STRATEGY == "session":
+        return 0
+    if PRESENCE_STRATEGY == "heartbeat":
+        return max(0, PRESENCE_HEARTBEAT_SECONDS + PRESENCE_GRACE_SECONDS)
+    return max(0, PRESENCE_TTL_SECONDS)
+
 async def _presence_set(conn: Connection) -> None:
     if not presence_client:
         return
+    now = int(time.time())
     prefix = PRESENCE_REDIS_PREFIX
     conn_key = f"{prefix}conn:{conn.id}"
     data = {
@@ -671,19 +689,36 @@ async def _presence_set(conn: Connection) -> None:
         "user_id": conn.user_id,
         "subjects": json.dumps(list(conn.subjects)),
         "connected_at": str(conn.connected_at),
+        "last_seen_at": str(now),
     }
     await presence_client.hset(conn_key, mapping=data)
-    if PRESENCE_TTL_SECONDS > 0:
-        await presence_client.expire(conn_key, PRESENCE_TTL_SECONDS)
+    ttl = _presence_effective_ttl()
+    if ttl > 0:
+        await presence_client.expire(conn_key, ttl)
     user_key = f"{prefix}user:{conn.user_id}"
     await presence_client.sadd(user_key, conn.id)
-    if PRESENCE_TTL_SECONDS > 0:
-        await presence_client.expire(user_key, PRESENCE_TTL_SECONDS)
+    if ttl > 0:
+        await presence_client.expire(user_key, ttl)
     for subject in conn.subjects:
         subject_key = f"{prefix}subject:{subject}"
         await presence_client.sadd(subject_key, conn.id)
-        if PRESENCE_TTL_SECONDS > 0:
-            await presence_client.expire(subject_key, PRESENCE_TTL_SECONDS)
+        if ttl > 0:
+            await presence_client.expire(subject_key, ttl)
+
+async def _presence_refresh(conn: Connection) -> None:
+    if not presence_client:
+        return
+    ttl = _presence_effective_ttl()
+    if ttl <= 0:
+        return
+    prefix = PRESENCE_REDIS_PREFIX
+    conn_key = f"{prefix}conn:{conn.id}"
+    await presence_client.hset(conn_key, mapping={"last_seen_at": str(int(time.time()))})
+    await presence_client.expire(conn_key, ttl)
+    user_key = f"{prefix}user:{conn.user_id}"
+    await presence_client.expire(user_key, ttl)
+    for subject in conn.subjects:
+        await presence_client.expire(f"{prefix}subject:{subject}", ttl)
 
 async def _presence_remove(conn: Connection) -> None:
     if not presence_client:
@@ -885,8 +920,15 @@ async def ws_endpoint(websocket: WebSocket):
                 data = json.loads(msg)
             except Exception:
                 data = {"type": "raw", "payload": msg}
-            if data.get("type") == "ping":
-                await websocket.send_json({"type": "pong"})
+            msg_type = data.get("type")
+            if msg_type in ("ping", "heartbeat"):
+                if PRESENCE_STRATEGY in ("ttl", "heartbeat"):
+                    if msg_type == "heartbeat" or PRESENCE_REFRESH_ON_MESSAGE:
+                        asyncio.create_task(_presence_refresh(conn))
+                if msg_type == "ping":
+                    await websocket.send_json({"type": "pong"})
+                else:
+                    await websocket.send_json({"type": "heartbeat_ack"})
                 continue
             if not conn.allow_message():
                 await websocket.send_json({"type": "rate_limited"})
@@ -894,6 +936,8 @@ async def ws_endpoint(websocket: WebSocket):
                 _log("ws_rate_limited", connection_id=conn.id, user_id=conn.user_id)
                 continue
             metrics["ws_messages_total"] += 1
+            if PRESENCE_STRATEGY in ("ttl", "heartbeat") and PRESENCE_REFRESH_ON_MESSAGE:
+                asyncio.create_task(_presence_refresh(conn))
             asyncio.create_task(_publish_message_event(conn, data, msg))
     except WebSocketDisconnect:
         pass

@@ -283,6 +283,38 @@ Monitoring / Alarms (suggested):
 
 ---
 
+## Presence Strategy
+Status: gateway + Symfony interpretation + Symfony writer (branch `presence-strategy-ownership`).
+
+Goal: make presence consistency configurable via strategy pattern and allow Symfony-specific interpretation.
+
+Strategies:
+- `ttl`: rely on Redis TTL + periodic refresh
+- `heartbeat`: client heartbeats drive presence updates
+- `session`: explicit connect/disconnect lifecycle only
+
+Gateway policies:
+- `PRESENCE_TTL_SECONDS`
+- `PRESENCE_HEARTBEAT_SECONDS`
+- `PRESENCE_GRACE_SECONDS`
+- `PRESENCE_REFRESH_ON_MESSAGE`
+
+Symfony interpretation policies:
+- `WS_PRESENCE_INTERPRETATION_STRATEGY=none|ttl|heartbeat|session`
+- `WS_PRESENCE_TTL_SECONDS`
+- `WS_PRESENCE_HEARTBEAT_SECONDS`
+- `WS_PRESENCE_GRACE_SECONDS`
+- `WS_PRESENCE_USE_LAST_SEEN`
+
+Symfony writer (ownership) policies:
+- `WS_PRESENCE_WRITER_TYPE=none|redis`
+- `WS_PRESENCE_WRITER_TTL_SECONDS`
+- `WS_PRESENCE_WRITER_REFRESH_ON_MESSAGE`
+
+Note: if Symfony owns presence, disable gateway presence updates to avoid double-writes.
+
+---
+
 ## Production Quickstart
 1. Set env: `cp .env.example .env`
 2. Create ACME storage:
