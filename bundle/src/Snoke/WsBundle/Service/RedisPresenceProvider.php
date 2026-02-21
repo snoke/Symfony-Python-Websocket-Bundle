@@ -4,17 +4,20 @@ namespace Snoke\WsBundle\Service;
 
 use Predis\Client;
 use Snoke\WsBundle\Contract\PresenceProviderInterface;
+use Snoke\WsBundle\Service\PresenceInterpreter;
 
 class RedisPresenceProvider implements PresenceProviderInterface
 {
     private Client $client;
     private array $config;
+    private PresenceInterpreter $interpreter;
 
     public function __construct(array $config)
     {
         $this->config = $config;
         $dsn = $config['redis']['dsn'] ?? 'redis://redis:6379';
         $this->client = new Client($dsn);
+        $this->interpreter = new PresenceInterpreter($config);
     }
 
     public function listConnections(?string $subjectKey = null, ?string $userId = null): array
@@ -28,7 +31,8 @@ class RedisPresenceProvider implements PresenceProviderInterface
         if ($subjectKey) {
             $setKey = $prefix.'subject:'.$subjectKey;
             $ids = $this->client->smembers($setKey) ?: [];
-            return ['connections' => $this->hydrateConnections($ids, $prefix)];
+            $connections = $this->hydrateConnections($ids, $prefix);
+            return ['connections' => $this->interpreter->filterConnections($connections)];
         }
 
         $connections = [];
@@ -44,7 +48,7 @@ class RedisPresenceProvider implements PresenceProviderInterface
             }
         } while ($cursor !== 0);
 
-        return ['connections' => $connections];
+        return ['connections' => $this->interpreter->filterConnections($connections)];
     }
 
     public function listConnectionsForUser(string $userId): array
@@ -52,7 +56,8 @@ class RedisPresenceProvider implements PresenceProviderInterface
         $prefix = $this->config['redis']['prefix'] ?? 'presence:';
         $setKey = $prefix.'user:'.$userId;
         $ids = $this->client->smembers($setKey) ?: [];
-        return ['connections' => $this->hydrateConnections($ids, $prefix)];
+        $connections = $this->hydrateConnections($ids, $prefix);
+        return ['connections' => $this->interpreter->filterConnections($connections)];
     }
 
     private function hydrateConnections(array $ids, string $prefix): array

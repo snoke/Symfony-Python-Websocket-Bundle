@@ -28,6 +28,12 @@ snoke_ws:
     redis:
       dsn: '%env(resolve:default::WS_REDIS_DSN)%'
       prefix: '%env(resolve:default::WS_REDIS_PREFIX)%'
+    interpretation:
+      strategy: '%env(resolve:default::WS_PRESENCE_INTERPRETATION_STRATEGY)%'
+      ttl_seconds: '%env(int:default::WS_PRESENCE_TTL_SECONDS)%'
+      heartbeat_seconds: '%env(int:default::WS_PRESENCE_HEARTBEAT_SECONDS)%'
+      grace_seconds: '%env(int:default::WS_PRESENCE_GRACE_SECONDS)%'
+      use_last_seen: '%env(bool:default::WS_PRESENCE_USE_LAST_SEEN)%'
   events:
     type: '%env(resolve:default::WS_EVENTS_TYPE)%'
     webhook:
