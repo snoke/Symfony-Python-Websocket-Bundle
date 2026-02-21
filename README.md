@@ -1,67 +1,56 @@
 # Symfony + Python Realtime Stack (Configurable)
 
-This stack provides bidirectional, scalable Realtime for Symfony apps — without touching your Symfony core.
+This stack provides bidirectional, highly scalable realtime WebSocket for Symfony
 
 ## Why this stack exists
 - Mercure / SSE are server→client only — forcing client updates creates massive overhead
 - Pusher / SaaS solutions are convenient, but your data, presence, security, and GDPR compliance are hosted externally
 - High connection counts make booting full Symfony per WebSocket message inefficient
-- The architecture allows true E2E encryption with full self-hosting control (keys never leave the clients). The gateway payload stays blind by design—unlike many PHP-centric WS stacks (e.g., Swoole) that couple transport and business logic in the same runtime
+- This architecture allows true E2E encryption with full self-hosting control (keys never leave the clients). The gateway payload stays blind by design — unlike many PHP-centric WS stacks (e.g., Swoole) that couple transport and business logic in the same runtime — while still keeping the integration Symfony-native.
 
-## What you get
-- Incremental Symfony-first integration (`terminator`) — quick WebSocket + webhook setup; business logic stays fully in Symfony
-- Broker-first high-scale architecture (`core`) — stateless gateway, Redis/RabbitMQ streaming; Symfony acts as producer/consumer
-- Self-hosted data sovereignty — full control over connections, presence, retention, and GDPR obligations
+## Modes & Routing
+- `core` (broker-first): stateless gateway with Redis/RabbitMQ streaming; Symfony acts as producer/consumer
+- `terminator` (Symfony-first): quick WebSocket + webhook setup; incremental integration
 
-In short: true WS, scalable, flexible, and Symfony-native. No magic SaaS lock-in.
+   Event routing (EVENTS_MODE): `webhook | broker | both | none`
 
----
 
-## Modes (WS_MODE)
-- `terminator`
-  Symfony-first, Webhook + HTTP presence. Incremental, quick integration, ideal for moderate Realtime.
-- `core`
-  Broker-first, stateless, Redis/RabbitMQ streaming. High-scale, Symfony is producer/consumer.
-
-Event routing (EVENTS_MODE): `webhook | broker | both | none`
-
----
-
-## Quick Start (terminator + core)
-You only switch the compose files.
-1. Generate dev keys (RS256):
+## Quick Start
+1. Clone this repo:
+   ```
+   git clone https://github.com/snoke/Symfony-Python-Realtime-Stack.git
+   cd Symfony-Python-Realtime-Stack
+   ```
+2. Generate dev keys (RS256):
    ```
    ./scripts/gen_dev_keys.sh
    ```
-2. Terminator mode:
-   ```
-   docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml up --build
-   ```
-3. Core mode:
+3. Start a mode (choose one):
+
+   Core mode:
    ```
    docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml up --build
    ```
+   Terminator mode:
+   ```
+   SYMFONY_WEBHOOK_URL=http://symfony:8000/internal/ws/events \
+   docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml up --build
+   ```
    Dev builds skip gRPC. If you need gRPC, either use `docker-compose.prod.yaml`
    or build with `INSTALL_GRPC=1`.
-4. Open / connect:
+4. Verify:
+   - Chat demo is live: `http://localhost:8180/demo/chat`
    - WebSocket: `ws://localhost:8180/ws`
    - API: `http://localhost:8180/api/ping`
-   - Chat demo: `http://localhost:8180/demo/chat` (works in both modes)
-5. Webhook (terminator only):
-   ```
-   SYMFONY_WEBHOOK_URL=http://symfony:8000/internal/ws/events
-   ```
 
----
 
-## Consumer Only Setup (No Demos, No Dev Overhead)
+## Project Integration
 The Symfony bundle is published on Packagist (pre-release tags). The gateway is available as a Docker image. You only need to clone this repo if you want the full local stack with Traefik + Symfony + brokers.
 
 ### 1) Install the Symfony bundle (pre-release)
 ```
 composer require snoke/ws-bundle:0.1.1-alpha.2 --ignore-platform-req=ext-grpc
 ```
-If you want the latest changes, use `dev-main`.
 If you actually need gRPC (e.g. OTEL gRPC exporter), install `ext-grpc` and run:
 ```
 composer require snoke/ws-bundle:0.1.1-alpha.2
@@ -75,26 +64,7 @@ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out ws-gateway/key
 openssl rsa -in ws-gateway/keys/dev_private.pem -pubout -out ws-gateway/keys/dev_public.pem
 ```
 
-1. Terminator mode:
-```
-curl -fsSL https://raw.githubusercontent.com/snoke/Symfony-Python-Realtime-Stack/main/docker-compose.ws-gateway.terminator.yaml \
-  -o ws-gateway/docker-compose.ws-gateway.terminator.yaml
-cd ws-gateway
-SYMFONY_WEBHOOK_URL=http://host.docker.internal:8000/internal/ws/events \
-  docker compose -f docker-compose.ws-gateway.terminator.yaml up
-```
-On Linux, `host.docker.internal` may not resolve; use your host IP or add `--add-host=host.docker.internal:host-gateway`.
-Then configure your Symfony app for terminator mode:
-```
-WS_MODE=terminator
-WS_TRANSPORT_TYPE=http
-WS_PRESENCE_TYPE=http
-WS_EVENTS_TYPE=webhook
-WS_GATEWAY_BASE_URL=http://localhost:8000
-WS_GATEWAY_API_KEY=dev-key
-```
-
-2. Core mode:
+1. Core mode:
 ```
 curl -fsSL https://raw.githubusercontent.com/snoke/Symfony-Python-Realtime-Stack/main/docker-compose.ws-gateway.core.yaml \
   -o ws-gateway/docker-compose.ws-gateway.core.yaml
@@ -115,15 +85,31 @@ WS_RABBITMQ_DSN=amqp://guest:guest@localhost:5672/
 ```
 If Symfony runs in Docker, use `redis` and `rabbitmq` hostnames instead of `localhost`.
 
+2. Terminator mode:
+```
+curl -fsSL https://raw.githubusercontent.com/snoke/Symfony-Python-Realtime-Stack/main/docker-compose.ws-gateway.terminator.yaml \
+  -o ws-gateway/docker-compose.ws-gateway.terminator.yaml
+cd ws-gateway
+SYMFONY_WEBHOOK_URL=http://host.docker.internal:8000/internal/ws/events \
+  docker compose -f docker-compose.ws-gateway.terminator.yaml up
+```
+On Linux, `host.docker.internal` may not resolve; use your host IP or add `--add-host=host.docker.internal:host-gateway`.
+Then configure your Symfony app for terminator mode:
+```
+WS_MODE=terminator
+WS_TRANSPORT_TYPE=http
+WS_PRESENCE_TYPE=http
+WS_EVENTS_TYPE=webhook
+WS_GATEWAY_BASE_URL=http://localhost:8000
+WS_GATEWAY_API_KEY=dev-key
+```
 
-### Core stack details
+
+## Core stack details
 What you get in `core` mode:
 - Stateless gateway publishes events to broker(s)
 - Symfony acts as producer/consumer (no webhook round‑trip)
 - `symfony-consumer` service reads `ws.inbox` and updates `/api/ws/last-message`
-
-If `symfony-consumer` tries to pull an image, make sure it uses `build: ./symfony`
-so it reuses the local Symfony image.
 
 Core flow:
 1. Client → Gateway (WS message)
@@ -146,7 +132,7 @@ Verify core wiring quickly:
 2. Send a demo message.
 3. Check `/api/ws/last-message` (updated by the consumer).
 
-### Terminator stack details
+## Terminator stack details
 What you get in `terminator` mode:
 - Gateway calls Symfony via webhook (`/internal/ws/events`)
 - Symfony publishes via HTTP to the gateway
@@ -160,13 +146,6 @@ Useful env vars in terminator:
 Demo mapping (core): `message_received` → `chat` is handled by `ChatDemoListener`
 (publisher uses subjects like `user:{id}`).
 
----
-
-## Versioning Notes (Pre‑Release)
-- Composer: use immutable pre‑release tags (e.g. `0.1.1-alpha.2`) instead of `dev-main` when you want a pinned version.
-- Docker: use immutable pre‑release tags (e.g. `:0.1.1-alpha.2`). Avoid `:latest` for now; an `:edge` tag is fine for rolling builds.
-
----
 
 ## Minimal WS Test Client
 1. Install dependencies:
@@ -188,7 +167,6 @@ Demo mapping (core): `message_received` → `chat` is handled by `ChatDemoListen
 
 Expected response: `{"type":"pong"}`
 
----
 
 ## Event Schema (gateway → webhook/broker)
 Event types: `connected`, `disconnected`, `message_received`
@@ -217,7 +195,6 @@ Edge cases:
 - Non-JSON WS messages → `{ "type":"raw","payload":"" }`
 - Rate-limited clients → `{ "type":"rate_limited" }`
 
----
 
 ## Symfony Config Overview
 Mode + transport/presence/events configurable in `symfony/config/packages/snoke_ws.yaml`
@@ -254,7 +231,6 @@ Key env vars:
 - `ORDERING_PARTITION_MODE=none|suffix` (gateway)
 - `ORDERING_PARTITION_MAX_LEN` (gateway)
 
----
 
 ## Production Quickstart
 1. Set env: `cp .env.example .env`
@@ -267,25 +243,16 @@ Key env vars:
    docker compose -f docker-compose.yaml -f docker-compose.prod.yaml up -d --build
    ```
 
----
 
 ## Healthchecks
 - Gateway: `GET /health`
 - Symfony: `GET /api/ping`
 
----
 
 ## Brokers (Redis/RabbitMQ)
 RabbitMQ Management UI: `http://localhost:8167` (user/pass: `guest` / `guest`)
 
----
 
 ## More Docs
 - Strategy details: `docs/strategies.md`
 - Ops notes: `docs/ops.md`
-
----
-
-## Old Branch Snapshots (archive)
-- `git checkout terminator`
-- `git checkout realtime-core`
