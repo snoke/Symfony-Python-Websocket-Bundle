@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Docs: clarify pre-release tagging for Composer and Docker (no stable/latest tags yet).
+- Docs: simplify consumer setup steps now that the bundle is on Packagist.
+- Docs: add gateway image quickstart to avoid repo clone.
+- Docs: add ready-to-download gateway compose files for quickstart.
 
 ## [0.1.1] - 2026-02-21
 ### Added

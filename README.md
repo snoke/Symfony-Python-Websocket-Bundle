@@ -18,7 +18,7 @@ In short: true WS, scalable, flexible, and Symfony-native. No magic SaaS lock-in
 ---
 
 ## Modes (WS_MODE)
-- `terminator` (default)
+- `terminator`
   Symfony-first, Webhook + HTTP presence. Incremental, quick integration, ideal for moderate Realtime.
 - `core`
   Broker-first, stateless, Redis/RabbitMQ streaming. High-scale, Symfony is producer/consumer.
@@ -41,7 +41,7 @@ You only switch the compose files.
    ```
    docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml up --build
    ```
-   Dev builds skip gRPC by default. If you need gRPC, either use `docker-compose.prod.yaml`
+   Dev builds skip gRPC. If you need gRPC, either use `docker-compose.prod.yaml`
    or build with `INSTALL_GRPC=1`.
 4. Open / connect:
    - WebSocket: `ws://localhost:8180/ws`
@@ -54,40 +54,67 @@ You only switch the compose files.
 
 ---
 
-## Use In Your Own Project (consumer setup)
-Temporary note: until we publish stable Composer + Docker images, you still need **two repos** even if you only want to **use** the stack:
-1. Your Symfony app + the bundle (`snoke/ws-bundle`).
-2. This gateway repo (for the Docker Compose stack).
+## Consumer Only Setup (No Demos, No Dev Overhead)
+The Symfony bundle is published on Packagist (pre-release tags). The gateway is available as a Docker image. You only need to clone this repo if you want the full local stack with Traefik + Symfony + brokers.
 
-### 1) Symfony bundle dependency (pre-release)
-Add the bundle repo and install it in one go:
+### 1) Install the Symfony bundle (pre-release)
 ```
-composer config repositories.snoke_ws_bundle vcs https://github.com/snoke/ws-bundle.git
-composer require snoke/ws-bundle:0.1.1-alpha.1
+composer require snoke/ws-bundle:0.1.1-alpha.2 --ignore-platform-req=ext-grpc
 ```
 If you want the latest changes, use `dev-main`.
-
-### 2) Start the gateway stack (this repo)
-Clone this repo and run the gateway + brokers stack **from here** (the compose files live here):
-
+If you actually need gRPC (e.g. OTEL gRPC exporter), install `ext-grpc` and run:
 ```
-git clone https://github.com/snoke/Symfony-Python-Realtime-Stack.git
-cd Symfony-Python-Realtime-Stack
+composer require snoke/ws-bundle:0.1.1-alpha.2
 ```
 
-- Terminator:
-  ```
-  docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml up --build
-  ```
-- Core:
-  ```
-  docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml up --build
-  ```
+### 2) Run the gateway image
+Create keys once:
+```
+mkdir -p ws-gateway/keys
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out ws-gateway/keys/dev_private.pem
+openssl rsa -in ws-gateway/keys/dev_private.pem -pubout -out ws-gateway/keys/dev_public.pem
+```
 
-Then point your Symfony app to the gateway (`WS_GATEWAY_BASE_URL`, `WS_GATEWAY_API_KEY`, etc.).
+1. Terminator mode:
+```
+curl -fsSL https://raw.githubusercontent.com/snoke/Symfony-Python-Realtime-Stack/main/docker-compose.ws-gateway.terminator.yaml \
+  -o ws-gateway/docker-compose.ws-gateway.terminator.yaml
+cd ws-gateway
+SYMFONY_WEBHOOK_URL=http://host.docker.internal:8000/internal/ws/events \
+  docker compose -f docker-compose.ws-gateway.terminator.yaml up
+```
+On Linux, `host.docker.internal` may not resolve; use your host IP or add `--add-host=host.docker.internal:host-gateway`.
+Then configure your Symfony app for terminator mode:
+```
+WS_MODE=terminator
+WS_TRANSPORT_TYPE=http
+WS_PRESENCE_TYPE=http
+WS_EVENTS_TYPE=webhook
+WS_GATEWAY_BASE_URL=http://localhost:8000
+WS_GATEWAY_API_KEY=dev-key
+```
 
-Note: once Docker images + Composer packages are published, this section will shrink to a simple
-`composer require ...` plus running the gateway image by tag (no repo clone).
+2. Core mode:
+```
+curl -fsSL https://raw.githubusercontent.com/snoke/Symfony-Python-Realtime-Stack/main/docker-compose.ws-gateway.core.yaml \
+  -o ws-gateway/docker-compose.ws-gateway.core.yaml
+cd ws-gateway
+docker compose -f docker-compose.ws-gateway.core.yaml up
+```
+Then configure your Symfony app for core mode:
+```
+WS_MODE=core
+WS_TRANSPORT_TYPE=redis_stream
+WS_PRESENCE_TYPE=redis
+WS_EVENTS_TYPE=redis_stream
+WS_REDIS_DSN=redis://localhost:6379
+WS_REDIS_STREAM=ws.outbox
+WS_REDIS_EVENTS_STREAM=ws.events
+WS_REDIS_PREFIX=presence:
+WS_RABBITMQ_DSN=amqp://guest:guest@localhost:5672/
+```
+If Symfony runs in Docker, use `redis` and `rabbitmq` hostnames instead of `localhost`.
+
 
 ### Core stack details
 What you get in `core` mode:
@@ -98,7 +125,7 @@ What you get in `core` mode:
 If `symfony-consumer` tries to pull an image, make sure it uses `build: ./symfony`
 so it reuses the local Symfony image.
 
-Core flow (default):
+Core flow:
 1. Client → Gateway (WS message)
 2. Gateway → Broker (`ws.inbox` stream / queue)
 3. Symfony consumer → reads event → app logic
@@ -119,17 +146,25 @@ Verify core wiring quickly:
 2. Send a demo message.
 3. Check `/api/ws/last-message` (updated by the consumer).
 
+### Terminator stack details
+What you get in `terminator` mode:
+- Gateway calls Symfony via webhook (`/internal/ws/events`)
+- Symfony publishes via HTTP to the gateway
+- Presence can be resolved via HTTP (no brokers required)
+
+Useful env vars in terminator:
+- `WS_MODE=terminator`
+- `WS_GATEWAY_BASE_URL` / `WS_GATEWAY_API_KEY`
+- `SYMFONY_WEBHOOK_URL` / `SYMFONY_WEBHOOK_SECRET`
+
 Demo mapping (core): `message_received` → `chat` is handled by `ChatDemoListener`
 (publisher uses subjects like `user:{id}`).
 
 ---
 
-## Roadmap / TODO
-- After edge‑case testing and load testing, publish a Composer release and prebuilt Docker images (gateway + demo).
-
 ## Versioning Notes (Pre‑Release)
-- Composer: use immutable pre‑release tags (e.g. `0.1.1-alpha.1`) instead of `dev-main` when you want a pinned version.
-- Docker: use immutable pre‑release tags (e.g. `:0.1.1-alpha.1`). Avoid `:latest` for now; an `:edge` tag is fine for rolling builds.
+- Composer: use immutable pre‑release tags (e.g. `0.1.1-alpha.2`) instead of `dev-main` when you want a pinned version.
+- Docker: use immutable pre‑release tags (e.g. `:0.1.1-alpha.2`). Avoid `:latest` for now; an `:edge` tag is fine for rolling builds.
 
 ---
 
@@ -214,7 +249,7 @@ Key env vars:
 - `WS_GATEWAY_BASE_URL` + `WS_GATEWAY_API_KEY` (Symfony → gateway)
 - `WS_REDIS_DSN`, `WS_RABBITMQ_DSN`, … (core/broker)
 - `ORDERING_STRATEGY=none|topic|subject` (gateway)
-- `ORDERING_TOPIC_FIELD` (gateway, default: `topic`)
+- `ORDERING_TOPIC_FIELD` (gateway, `topic`)
 - `ORDERING_SUBJECT_SOURCE=user|subject` (gateway)
 - `ORDERING_PARTITION_MODE=none|suffix` (gateway)
 - `ORDERING_PARTITION_MAX_LEN` (gateway)

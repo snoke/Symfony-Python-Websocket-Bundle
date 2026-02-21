@@ -1,0 +1,20 @@
+services:
+  gateway:
+    image: ghcr.io/snoke/ws-gateway:0.1.1-alpha.2
+    environment:
+      - WS_MODE=terminator
+      - SYMFONY_WEBHOOK_URL=${SYMFONY_WEBHOOK_URL:-http://host.docker.internal:8000/internal/ws/events}
+      - SYMFONY_WEBHOOK_SECRET=
+      - WEBHOOK_RETRY_ATTEMPTS=3
+      - WEBHOOK_RETRY_BASE_SECONDS=0.5
+      - WEBHOOK_TIMEOUT_SECONDS=5
+      - JWT_ALG=RS256
+      - JWT_USER_ID_CLAIM=user_id
+      - JWT_PUBLIC_KEY_FILE=/run/keys/dev_public.pem
+      - GATEWAY_API_KEY=${GATEWAY_API_KEY:-dev-key}
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+    volumes:
+      - ./keys/dev_public.pem:/run/keys/dev_public.pem:ro
+    ports:
+      - "8000:8000"
