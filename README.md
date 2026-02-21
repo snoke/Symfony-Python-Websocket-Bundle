@@ -55,7 +55,7 @@ You only switch the compose files.
 ---
 
 ## Use In Your Own Project (consumer setup)
-If you only want to **use** the stack (not develop it), you need **two repos**:
+Temporary note: until we publish stable Composer + Docker images, you need **two repos** even if you only want to **use** the stack (not develop it):
 1. Your Symfony app + the bundle (`snoke/ws-bundle`).
 2. This gateway repo (for the Docker Compose stack).
 
