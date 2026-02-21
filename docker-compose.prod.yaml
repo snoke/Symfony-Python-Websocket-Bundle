@@ -53,6 +53,8 @@ services:
       - WS_MODE=${WS_MODE:-terminator}
       - WS_GATEWAY_BASE_URL=${WS_GATEWAY_BASE_URL:-}
       - WS_GATEWAY_API_KEY=${WS_GATEWAY_API_KEY:-}
+      - WS_PRESENCE_INTERPRETATION_STRATEGY=none
+      - WS_PRESENCE_WRITER_TYPE=none
     healthcheck:
       test: ["CMD", "php", "-r", "file_get_contents('http://localhost:8000/api/ping');"]
       interval: 10s

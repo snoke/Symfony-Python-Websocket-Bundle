@@ -46,6 +46,8 @@ services:
       - WS_MODE=terminator
       - WS_TRANSPORT_TYPE=http
       - WS_PRESENCE_TYPE=http
+      - WS_PRESENCE_INTERPRETATION_STRATEGY=none
+      - WS_PRESENCE_WRITER_TYPE=none
       - WS_EVENTS_TYPE=webhook
       - WS_GATEWAY_BASE_URL=http://gateway:8000
       - WS_GATEWAY_API_KEY=dev-key

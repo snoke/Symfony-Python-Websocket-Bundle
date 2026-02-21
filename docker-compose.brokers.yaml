@@ -23,6 +23,8 @@ services:
     environment:
       - WS_TRANSPORT_TYPE=redis_stream
       - WS_PRESENCE_TYPE=redis
+      - WS_PRESENCE_INTERPRETATION_STRATEGY=none
+      - WS_PRESENCE_WRITER_TYPE=none
       - WS_EVENTS_TYPE=redis_stream
       - WS_REDIS_DSN=redis://redis:6379
       - WS_REDIS_STREAM=ws.outbox
