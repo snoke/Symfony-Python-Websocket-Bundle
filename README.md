@@ -142,8 +142,8 @@ Key env vars:
 
 ---
 
-## Observability / Tracing Strategy (planned)
-Status: design-only (not implemented yet in main).
+## Observability / Tracing Strategy
+Status: implemented in gateway (branch `observability-strategy`).
 
 Goal: consistent trace propagation across Gateway → Broker → Symfony.
 

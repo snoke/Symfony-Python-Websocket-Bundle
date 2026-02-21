@@ -6,6 +6,7 @@ import uuid
 import hashlib
 import hmac
 import logging
+import random
 import sys
 from typing import Any, Dict, List, Optional, Set
 
@@ -59,10 +60,24 @@ PRESENCE_TTL_SECONDS = int(os.getenv("PRESENCE_TTL_SECONDS", "120"))
 WEBHOOK_RETRY_ATTEMPTS = int(os.getenv("WEBHOOK_RETRY_ATTEMPTS", "3"))
 WEBHOOK_RETRY_BASE_SECONDS = float(os.getenv("WEBHOOK_RETRY_BASE_SECONDS", "0.5"))
 WEBHOOK_TIMEOUT_SECONDS = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "5"))
+TRACING_STRATEGY = os.getenv("TRACING_STRATEGY", "none").lower()
+TRACING_TRACE_ID_FIELD = os.getenv("TRACING_TRACE_ID_FIELD", "trace_id")
+TRACING_HEADER_NAME = os.getenv("TRACING_HEADER_NAME", "X-Trace-Id")
+TRACING_SAMPLE_RATE = float(os.getenv("TRACING_SAMPLE_RATE", "1.0"))
+TRACING_EXPORTER = os.getenv("TRACING_EXPORTER", "stdout").lower()
 WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
 WS_RATE_LIMIT_BURST = float(os.getenv("WS_RATE_LIMIT_BURST", "20"))
 LOG_FORMAT = os.getenv("LOG_FORMAT", "json")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+
+if TRACING_STRATEGY not in ("none", "propagate", "full"):
+    TRACING_STRATEGY = "none"
+if TRACING_SAMPLE_RATE < 0:
+    TRACING_SAMPLE_RATE = 0.0
+if TRACING_SAMPLE_RATE > 1:
+    TRACING_SAMPLE_RATE = 1.0
+if TRACING_EXPORTER not in ("stdout", "none"):
+    TRACING_EXPORTER = "stdout"
 
 logger = logging.getLogger("gateway")
 logger.setLevel(getattr(logging, LOG_LEVEL, logging.INFO))
@@ -95,6 +110,30 @@ def _log(event: str, **fields: Any) -> None:
         logger.info(json.dumps(payload, separators=(",", ":"), sort_keys=True))
     else:
         logger.info("%s %s", event, payload)
+
+def _should_sample_trace() -> bool:
+    if TRACING_SAMPLE_RATE <= 0:
+        return False
+    if TRACING_SAMPLE_RATE >= 1:
+        return True
+    return random.random() < TRACING_SAMPLE_RATE
+
+def _extract_trace_id(data: Optional[Dict[str, Any]]) -> str:
+    if not data:
+        return ""
+    trace_id = data.get(TRACING_TRACE_ID_FIELD)
+    if trace_id is None and isinstance(data.get("meta"), dict):
+        trace_id = data["meta"].get(TRACING_TRACE_ID_FIELD)
+    return str(trace_id) if trace_id else ""
+
+def _select_trace_id(existing: str) -> str:
+    if TRACING_STRATEGY == "none":
+        return ""
+    if existing:
+        return existing if _should_sample_trace() else ""
+    if TRACING_STRATEGY == "full" and _should_sample_trace():
+        return uuid.uuid4().hex
+    return ""
 
 class Connection:
     def __init__(self, websocket: WebSocket, user_id: str, subjects: List[str]):
@@ -153,6 +192,9 @@ async def _post_webhook(event_type: str, payload: Dict[str, Any]) -> None:
             hashlib.sha256
         ).hexdigest()
         headers["X-Webhook-Signature"] = f"sha256={signature}"
+    trace_id = payload.get(TRACING_TRACE_ID_FIELD)
+    if trace_id and TRACING_HEADER_NAME:
+        headers[TRACING_HEADER_NAME] = str(trace_id)
     for attempt in range(WEBHOOK_RETRY_ATTEMPTS):
         try:
             await http_client.post(SYMFONY_WEBHOOK_URL, content=body, headers=headers)
@@ -201,6 +243,7 @@ async def _publish_event(event_type: str, stream: Optional[str], exchange: Optio
         await _post_webhook(event_type, payload)
 
 async def _publish_message_event(conn: Connection, data: Dict[str, Any], raw: str) -> None:
+    trace_id = _select_trace_id(_extract_trace_id(data))
     payload = {
         "type": "message_received",
         "connection_id": conn.id,
@@ -210,9 +253,12 @@ async def _publish_message_event(conn: Connection, data: Dict[str, Any], raw: st
         "message": data,
         "raw": raw,
     }
+    if trace_id:
+        payload[TRACING_TRACE_ID_FIELD] = trace_id
     await _publish_event("message_received", REDIS_INBOX_STREAM, rabbit_inbox_exchange, RABBITMQ_INBOX_ROUTING_KEY, payload)
 
 async def _publish_connection_event(event_type: str, conn: Connection) -> None:
+    trace_id = _select_trace_id("")
     payload = {
         "type": event_type,
         "connection_id": conn.id,
@@ -220,6 +266,8 @@ async def _publish_connection_event(event_type: str, conn: Connection) -> None:
         "subjects": list(conn.subjects),
         "connected_at": conn.connected_at,
     }
+    if trace_id:
+        payload[TRACING_TRACE_ID_FIELD] = trace_id
     await _publish_event(event_type, REDIS_EVENTS_STREAM, rabbit_events_exchange, RABBITMQ_EVENTS_ROUTING_KEY, payload)
 
 async def _presence_set(conn: Connection) -> None:

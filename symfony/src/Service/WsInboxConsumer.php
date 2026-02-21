@@ -93,6 +93,7 @@ class WsInboxConsumer
             'connected_at' => $event['connected_at'] ?? null,
             'message' => $event['message'] ?? null,
             'raw' => $event['raw'] ?? null,
+            'trace_id' => $event['trace_id'] ?? null,
             'received_at' => time(),
         ];
         $this->inbox->setLastMessage($payload);
