@@ -11,7 +11,7 @@ providers:
 http:
   routers:
     ws:
-      rule: "PathPrefix(`/ws`) || PathPrefix(`/internal`) || PathPrefix(`/health`)"
+      rule: "PathPrefix(`/ws`) || PathPrefix(`/internal`) || PathPrefix(`/health`) || PathPrefix(`/ready`)"
       service: ws
       entryPoints:
         - web

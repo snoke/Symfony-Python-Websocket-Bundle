@@ -19,7 +19,7 @@ certificatesResolvers:
 http:
   routers:
     ws:
-      rule: "Host(`${TRAEFIK_HOST}`) && (PathPrefix(`/ws`) || PathPrefix(`/internal`) || PathPrefix(`/health`))"
+      rule: "Host(`${TRAEFIK_HOST}`) && (PathPrefix(`/ws`) || PathPrefix(`/internal`) || PathPrefix(`/health`) || PathPrefix(`/ready`))"
       service: ws
       entryPoints:
         - websecure
