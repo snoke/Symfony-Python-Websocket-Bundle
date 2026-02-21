@@ -142,6 +142,24 @@ Key env vars:
 
 ---
 
+## Observability / Tracing Strategy (planned)
+Status: design-only (not implemented yet in main).
+
+Goal: consistent trace propagation across Gateway → Broker → Symfony.
+
+Strategies:
+- `none`: no tracing
+- `propagate`: forward trace IDs if present
+- `full`: always create and propagate trace IDs
+
+Policies:
+- `TRACING_TRACE_ID_FIELD`
+- `TRACING_HEADER_NAME`
+- `TRACING_SAMPLE_RATE`
+- `TRACING_EXPORTER`
+
+---
+
 ## Production Quickstart
 1. Set env: `cp .env.example .env`
 2. Create ACME storage:
