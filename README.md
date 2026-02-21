@@ -187,7 +187,7 @@ Partitioning (optional):
 ---
 
 ## Observability / Tracing Strategy
-Status: OTel end-to-end tracing implemented (branch `tracing`).
+Status: OTel end-to-end tracing implemented.
 
 Goal: real spans + propagation across Gateway → Broker → Symfony.
 Includes producer/consumer spans for broker publish + outbox delivery.
@@ -228,7 +228,7 @@ Symfony policies:
    ```
 
 ## Replay / Persistence Strategy
-Status: implemented for Redis streams + RabbitMQ minimal + replay API hardening (branch `replay-strategy`).
+Status: implemented for Redis streams + RabbitMQ minimal + replay API hardening.
 
 Goal: define replay behavior for brokered events without hard-coding retention.
 
@@ -284,7 +284,7 @@ Monitoring / Alarms (suggested):
 ---
 
 ## Presence Strategy
-Status: gateway + Symfony interpretation + Symfony writer (branch `presence-strategy-ownership`).
+Status: gateway + Symfony interpretation + Symfony writer.
 
 Goal: make presence consistency configurable via strategy pattern and allow Symfony-specific interpretation.
 
@@ -312,6 +312,25 @@ Symfony writer (ownership) policies:
 - `WS_PRESENCE_WRITER_REFRESH_ON_MESSAGE`
 
 Note: if Symfony owns presence, disable gateway presence updates to avoid double-writes.
+
+---
+
+## Backpressure Strategy
+Status: implemented in gateway.
+
+Goal: make backpressure policies configurable and swappable like `WS_MODE`.
+
+Strategies:
+- `none`: no backpressure logic (legacy behavior)
+- `drop`: drop messages when limits are hit
+- `close`: close connections under sustained pressure
+- `buffer`: bounded buffering (per-connection + global)
+
+Policies:
+- `BACKPRESSURE_PER_CONN_BUFFER`
+- `BACKPRESSURE_GLOBAL_BUFFER`
+- `BACKPRESSURE_MAX_INFLIGHT`
+- `BACKPRESSURE_DROP_POLICY=oldest|newest`
 
 ---
 
