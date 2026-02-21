@@ -42,11 +42,14 @@ class SnokeWsExtension extends Extension
 
         $container->register('snoke_ws.http_publisher', 'Snoke\\WsBundle\\Service\\HttpPublisher')
             ->addArgument(new Reference('http_client'))
-            ->addArgument('%snoke_ws.transport%');
+            ->addArgument('%snoke_ws.transport%')
+            ->addArgument(new Reference('snoke_ws.tracing'));
         $container->register('snoke_ws.redis_stream_publisher', 'Snoke\\WsBundle\\Service\\RedisStreamPublisher')
-            ->addArgument('%snoke_ws.transport%');
+            ->addArgument('%snoke_ws.transport%')
+            ->addArgument(new Reference('snoke_ws.tracing'));
         $container->register('snoke_ws.rabbitmq_publisher', 'Snoke\\WsBundle\\Service\\RabbitMqPublisher')
-            ->addArgument('%snoke_ws.transport%');
+            ->addArgument('%snoke_ws.transport%')
+            ->addArgument(new Reference('snoke_ws.tracing'));
 
         $container->register('snoke_ws.dynamic_publisher', 'Snoke\\WsBundle\\Service\\DynamicPublisher')
             ->addArgument(new Reference('snoke_ws.http_publisher'))

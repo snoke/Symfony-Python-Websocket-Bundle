@@ -21,7 +21,7 @@ import aio_pika
 import httpx
 import jwt
 import redis.asyncio as redis
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from jwt import PyJWKClient
 from aio_pika import ExchangeType
@@ -297,9 +297,21 @@ async def _publish_broker(stream: Optional[str], exchange: Optional[aio_pika.Exc
 
 async def _publish_event(event_type: str, stream: Optional[str], exchange: Optional[aio_pika.Exchange], routing_key: str, payload: Dict[str, Any]) -> None:
     if EVENTS_MODE in ("broker", "both"):
-        await _publish_broker(stream, exchange, routing_key, payload)
+        if tracing_enabled and _should_record(trace.get_current_span().get_span_context().is_valid):
+            with tracer.start_as_current_span("broker.publish", kind=SpanKind.PRODUCER) as span:
+                span.set_attribute("broker.routing_key", routing_key)
+                if stream:
+                    span.set_attribute("broker.stream", stream)
+                await _publish_broker(stream, exchange, routing_key, payload)
+        else:
+            await _publish_broker(stream, exchange, routing_key, payload)
     if EVENTS_MODE in ("webhook", "both"):
-        await _post_webhook(event_type, payload)
+        if tracing_enabled and _should_record(trace.get_current_span().get_span_context().is_valid):
+            with tracer.start_as_current_span("webhook.publish", kind=SpanKind.CLIENT) as span:
+                span.set_attribute("webhook.event_type", event_type)
+                await _post_webhook(event_type, payload)
+        else:
+            await _post_webhook(event_type, payload)
 
 async def _publish_message_event(conn: Connection, data: Dict[str, Any], raw: str) -> None:
     traceparent = _extract_traceparent(data) or conn.traceparent
@@ -433,7 +445,14 @@ async def _redis_outbox_consumer() -> None:
                         data = json.loads(raw)
                         subjects = data.get("subjects", [])
                         payload = data.get("payload")
-                        await _send_to_subjects(subjects, payload)
+                        traceparent = data.get("traceparent") or ""
+                        span_ctx = propagate.extract({"traceparent": traceparent}) if traceparent else None
+                        if tracing_enabled and _should_record(bool(traceparent)):
+                            with tracer.start_as_current_span("ws.outbox.redis", context=span_ctx, kind=SpanKind.CONSUMER) as span:
+                                span.set_attribute("ws.subjects_count", len(subjects))
+                                await _send_to_subjects(subjects, payload)
+                        else:
+                            await _send_to_subjects(subjects, payload)
                     except Exception:
                         await _push_redis_dlq(client, "parse_error", raw)
         except Exception:
@@ -462,7 +481,14 @@ async def _rabbit_outbox_consumer() -> None:
                                 data = json.loads(message.body.decode("utf-8"))
                                 subjects = data.get("subjects", [])
                                 payload = data.get("payload")
-                                await _send_to_subjects(subjects, payload)
+                                traceparent = data.get("traceparent") or ""
+                                span_ctx = propagate.extract({"traceparent": traceparent}) if traceparent else None
+                                if tracing_enabled and _should_record(bool(traceparent)):
+                                    with tracer.start_as_current_span("ws.outbox.rabbitmq", context=span_ctx, kind=SpanKind.CONSUMER) as span:
+                                        span.set_attribute("ws.subjects_count", len(subjects))
+                                        await _send_to_subjects(subjects, payload)
+                                else:
+                                    await _send_to_subjects(subjects, payload)
                                 backoff = 1.0
                             except Exception:
                                 await _push_rabbit_dlq(channel, "parse_error", message.body)
@@ -570,14 +596,22 @@ async def ws_endpoint(websocket: WebSocket):
         asyncio.create_task(_publish_connection_event("disconnected", conn))
 
 @app.post("/internal/publish")
-async def publish(payload: Dict[str, Any]):
+async def publish(payload: Dict[str, Any], request: Request):
     api_key = payload.get("api_key") or ""
     if GATEWAY_API_KEY and api_key != GATEWAY_API_KEY:
         raise HTTPException(status_code=401, detail="invalid api key")
 
     subjects = payload.get("subjects", [])
     message = payload.get("payload")
-    sent = await _send_to_subjects(subjects, message)
+    traceparent = request.headers.get("traceparent", "")
+    span_ctx = propagate.extract({"traceparent": traceparent}) if traceparent else None
+
+    if tracing_enabled and _should_record(bool(traceparent)):
+        with tracer.start_as_current_span("ws.publish.http", context=span_ctx, kind=SpanKind.SERVER) as span:
+            span.set_attribute("ws.subjects_count", len(subjects))
+            sent = await _send_to_subjects(subjects, message)
+    else:
+        sent = await _send_to_subjects(subjects, message)
     metrics["publish_total"] += 1
     return JSONResponse({"sent": sent})
 

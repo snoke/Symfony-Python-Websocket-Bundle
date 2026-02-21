@@ -144,9 +144,10 @@ Key env vars:
 ---
 
 ## Observability / Tracing Strategy
-Status: OTel base tracing implemented (branch `tracing`).
+Status: OTel end-to-end tracing implemented (branch `tracing-e2e`).
 
 Goal: real spans + propagation across Gateway → Broker → Symfony.
+Includes producer/consumer spans for broker publish + outbox delivery.
 
 Strategies:
 - `none`: no tracing

@@ -97,6 +97,23 @@ class TracingService
         return new TracingScope($span, $scope);
     }
 
+    public function injectTraceparent(array &$carrier): void
+    {
+        if (!$this->isEnabled()) {
+            return;
+        }
+        TraceContextPropagator::getInstance()->inject($carrier);
+    }
+
+    public function currentTraceparent(): string
+    {
+        $carrier = [];
+        $this->injectTraceparent($carrier);
+        return isset($carrier[TraceContextPropagator::TRACEPARENT])
+            ? (string) $carrier[TraceContextPropagator::TRACEPARENT]
+            : '';
+    }
+
     private function buildSpanProcessor(string $exporter, string $otlpEndpoint, string $otlpProtocol): ?object
     {
         if ($exporter === 'none') {
