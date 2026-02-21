@@ -64,6 +64,20 @@ class SnokeWsExtension extends Extension
             $presenceService = 'snoke_ws.redis_presence';
         }
 
+        $writerType = $config['presence']['writer']['type'] ?? 'none';
+        if ($writerType === 'redis') {
+            $container->register('snoke_ws.presence_writer', 'Snoke\\WsBundle\\Service\\RedisPresenceWriter')
+                ->addArgument('%snoke_ws.presence%');
+        } else {
+            $container->register('snoke_ws.presence_writer', 'Snoke\\WsBundle\\Service\\NullPresenceWriter');
+        }
+        $container->setAlias('Snoke\\WsBundle\\Contract\\PresenceWriterInterface', 'snoke_ws.presence_writer');
+        $container->register('snoke_ws.presence_writer_listener', 'Snoke\\WsBundle\\EventListener\\PresenceWriterListener')
+            ->addArgument(new Reference('snoke_ws.presence_writer'))
+            ->addArgument('%snoke_ws.presence%')
+            ->setAutowired(true)
+            ->setAutoconfigured(true);
+
         $container->register('snoke_ws.subject_key_resolver', 'Snoke\\WsBundle\\Service\\SimpleSubjectKeyResolver')
             ->addArgument('%snoke_ws.subjects%');
 
