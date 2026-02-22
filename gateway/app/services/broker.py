@@ -128,7 +128,7 @@ class BrokerService:
         if not self._settings.REDIS_DSN:
             return
         client = redis.from_url(self._settings.REDIS_DSN, decode_responses=True)
-        last_id = "0-0"
+        last_id = "$" if self._settings.REPLAY_STRATEGY == "none" else "0-0"
         backoff = 1.0
         while True:
             try:
