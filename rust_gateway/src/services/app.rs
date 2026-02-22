@@ -403,7 +403,11 @@ async fn publish_handler(
     }
     Metrics::inc(&state.metrics.publish_total, 1);
     let _traceparent = headers.get("traceparent");
-    (axum::http::StatusCode::OK, Json(json!({"sent": sent}))).into_response()
+    (
+        axum::http::StatusCode::OK,
+        Json(json!({"sent": stats.sent})),
+    )
+        .into_response()
 }
 
 async fn replay_handler(
