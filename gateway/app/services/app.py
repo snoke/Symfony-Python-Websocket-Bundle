@@ -21,6 +21,17 @@ from .settings import Settings
 from .tracing import TracingService
 from .webhook import WebhookService
 
+SIMPLE_PING = '{"type":"ping"}'
+SIMPLE_HEARTBEAT = '{"type":"heartbeat"}'
+PONG_MESSAGE = '{"type":"pong"}'
+HEARTBEAT_ACK_MESSAGE = '{"type":"heartbeat_ack"}'
+RATE_LIMITED_MESSAGE = '{"type":"rate_limited"}'
+
+
+def _is_exact_json(message: str, expected: str) -> bool:
+    trimmed = message.strip()
+    return len(trimmed) == len(expected) and trimmed == expected
+
 
 class GatewayApp:
     def __init__(self, settings: Settings) -> None:
@@ -64,6 +75,15 @@ class GatewayApp:
         await self._webhook.shutdown()
         await self._broker.shutdown()
 
+    async def _handle_control_message(self, websocket: WebSocket, conn: Connection, msg_type: str) -> None:
+        if self._settings.PRESENCE_STRATEGY in ("ttl", "heartbeat"):
+            if msg_type == "heartbeat" or self._settings.PRESENCE_REFRESH_ON_MESSAGE:
+                self._presence.refresh(conn)
+        if msg_type == "ping":
+            await websocket.send_text(PONG_MESSAGE)
+        else:
+            await websocket.send_text(HEARTBEAT_ACK_MESSAGE)
+
     async def ws_endpoint(self, websocket: WebSocket) -> None:
         token = websocket.headers.get("authorization", "").replace("Bearer ", "")
         if not token:
@@ -96,28 +116,28 @@ class GatewayApp:
         try:
             while True:
                 msg = await websocket.receive_text()
+                if _is_exact_json(msg, SIMPLE_PING):
+                    await self._handle_control_message(websocket, conn, "ping")
+                    continue
+                if _is_exact_json(msg, SIMPLE_HEARTBEAT):
+                    await self._handle_control_message(websocket, conn, "heartbeat")
+                    continue
                 try:
                     data = json.loads(msg)
                 except Exception:
                     data = {"type": "raw", "payload": msg}
                 msg_type = data.get("type")
                 if msg_type in ("ping", "heartbeat"):
-                    if self._settings.PRESENCE_STRATEGY in ("ttl", "heartbeat"):
-                        if msg_type == "heartbeat" or self._settings.PRESENCE_REFRESH_ON_MESSAGE:
-                            asyncio.create_task(self._presence.refresh(conn))
-                    if msg_type == "ping":
-                        await websocket.send_json({"type": "pong"})
-                    else:
-                        await websocket.send_json({"type": "heartbeat_ack"})
+                    await self._handle_control_message(websocket, conn, msg_type)
                     continue
                 if not conn.allow_message():
-                    await websocket.send_json({"type": "rate_limited"})
+                    await websocket.send_text(RATE_LIMITED_MESSAGE)
                     self._metrics.inc("ws_rate_limited_total")
                     self._logger.log("ws_rate_limited", connection_id=conn.id, user_id=conn.user_id)
                     continue
                 self._metrics.inc("ws_messages_total")
                 if self._settings.PRESENCE_STRATEGY in ("ttl", "heartbeat") and self._settings.PRESENCE_REFRESH_ON_MESSAGE:
-                    asyncio.create_task(self._presence.refresh(conn))
+                    self._presence.refresh(conn)
                 if self._settings.BACKPRESSURE_STRATEGY == "none":
                     asyncio.create_task(self._events.publish_message_event(conn, data, msg))
                     continue

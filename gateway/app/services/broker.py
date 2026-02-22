@@ -101,8 +101,10 @@ class BrokerService:
         exchange: Optional[aio_pika.Exchange],
         routing_key: str,
         payload: Dict[str, Any],
+        body: Optional[str] = None,
     ) -> None:
-        body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        if body is None:
+            body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
         if self.redis_publish_client and stream:
             try:
                 kwargs: Dict[str, Any] = {}
@@ -126,7 +128,7 @@ class BrokerService:
         if not self._settings.REDIS_DSN:
             return
         client = redis.from_url(self._settings.REDIS_DSN, decode_responses=True)
-        last_id = "0-0"
+        last_id = "$" if self._settings.REPLAY_STRATEGY == "none" else "0-0"
         backoff = 1.0
         while True:
             try:

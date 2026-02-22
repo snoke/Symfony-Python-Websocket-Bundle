@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, Optional
 
 from opentelemetry import trace
@@ -41,6 +42,14 @@ class EventPublisher:
         ordering_key: str = "",
     ) -> None:
         stream, routing_key = self._ordering.apply_partition(stream, routing_key, ordering_key)
+        body: Optional[str] = None
+
+        def ensure_body() -> str:
+            nonlocal body
+            if body is None:
+                body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+            return body
+
         if self._settings.EVENTS_MODE in ("broker", "both"):
             if self._tracing.enabled and self._tracing.should_record(
                 trace.get_current_span().get_span_context().is_valid
@@ -49,18 +58,18 @@ class EventPublisher:
                     span.set_attribute("broker.routing_key", routing_key)
                     if stream:
                         span.set_attribute("broker.stream", stream)
-                    await self._broker.publish_broker(stream, exchange, routing_key, payload)
+                    await self._broker.publish_broker(stream, exchange, routing_key, payload, body=ensure_body())
             else:
-                await self._broker.publish_broker(stream, exchange, routing_key, payload)
+                await self._broker.publish_broker(stream, exchange, routing_key, payload, body=ensure_body())
         if self._settings.EVENTS_MODE in ("webhook", "both"):
             if self._tracing.enabled and self._tracing.should_record(
                 trace.get_current_span().get_span_context().is_valid
             ):
                 with self._tracing.tracer.start_as_current_span("webhook.publish", kind=SpanKind.CLIENT) as span:
                     span.set_attribute("webhook.event_type", event_type)
-                    await self._webhook.post(event_type, payload)
+                    await self._webhook.post(event_type, payload, body=ensure_body())
             else:
-                await self._webhook.post(event_type, payload)
+                await self._webhook.post(event_type, payload, body=ensure_body())
 
     async def publish_message_event(self, conn, data: Dict[str, Any], raw: str) -> None:
         traceparent = self._tracing.extract_traceparent(data) or conn.traceparent

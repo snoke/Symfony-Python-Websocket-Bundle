@@ -36,12 +36,13 @@ class WebhookService:
             await self._client.aclose()
             self._client = None
 
-    async def post(self, event_type: str, payload: Dict[str, Any]) -> None:
+    async def post(self, event_type: str, payload: Dict[str, Any], body: Optional[str] = None) -> None:
         if self._settings.EVENTS_MODE not in ("webhook", "both"):
             return
         if not self._settings.SYMFONY_WEBHOOK_URL or not self._client:
             return
-        body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
+        if body is None:
+            body = json.dumps(payload, separators=(",", ":"), sort_keys=True)
         headers: Dict[str, str] = {}
         if self._settings.SYMFONY_WEBHOOK_SECRET:
             signature = hmac.new(

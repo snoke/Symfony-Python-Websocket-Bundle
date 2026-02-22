@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 import uuid
 from collections import deque
@@ -63,6 +64,10 @@ class ConnectionManager:
                     self.subjects_index.pop(subject, None)
 
     async def send_to_subjects(self, subjects: List[str], payload: Any) -> int:
+        try:
+            text = json.dumps({"type": "event", "payload": payload}, separators=(",", ":"), sort_keys=True)
+        except Exception:
+            return 0
         sent = 0
         target_ids: Set[str] = set()
         for subject in subjects:
@@ -73,7 +78,7 @@ class ConnectionManager:
             if conn is None:
                 continue
             try:
-                await conn.websocket.send_json({"type": "event", "payload": payload})
+                await conn.websocket.send_text(text)
                 sent += 1
             except Exception:
                 pass
