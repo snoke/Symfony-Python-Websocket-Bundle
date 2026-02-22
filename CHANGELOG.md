@@ -8,12 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - MIT License file.
+- Experimental Rust gateway with Docker Compose override (`docker-compose.rust-gateway.yaml`).
+- Rust gateway services mirroring the Python gateway (WS, auth/JWT, rate limiting, metrics, Redis/Rabbit/Webhook handlers).
+- Rust gateway tuning knobs: bounded WS outbox queue + optional Redis publish batching + JSON buffer pool sizing envs.
+- Gateway smoke tests now include Redis outbox delivery check (core mode).
+- Python gateway presence refresh tuning envs: `PRESENCE_REFRESH_ON_MESSAGE`, `PRESENCE_REFRESH_MIN_INTERVAL_SECONDS`, `PRESENCE_REFRESH_QUEUE_SIZE`.
 
 ### Changed
 - Docs: clarify pre-release tagging for Composer and Docker (no stable/latest tags yet).
 - Docs: simplify consumer setup steps now that the bundle is on Packagist.
 - Docs: add gateway image quickstart to avoid repo clone.
 - Docs: add ready-to-download gateway compose files for quickstart.
+- Docs: remove smoke test instructions from README.
+- Python gateway hot path optimizations (control-message fast path, pre-serialized event payloads for WS/broker/webhook).
+- Presence updates now use Redis pipelines and a queued refresh worker to reduce load.
+- Outbox consumer starts at latest when replay is disabled (`REPLAY_STRATEGY=none`).
 
 ## [0.1.1] - 2026-02-21
 ### Added

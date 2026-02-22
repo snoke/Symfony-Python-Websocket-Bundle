@@ -57,22 +57,6 @@ Core mode:
 docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml -f docker-compose.rust-gateway.yaml up --build
 ```
 
-## Smoke Tests
-```
-./scripts/smoke_test_gateway.sh
-```
-WS test requires Python deps:
-```
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r scripts/requirements.txt
-```
-Skip WS publish test:
-```
-SKIP_PUBLISH=1 ./scripts/smoke_test_gateway.sh
-```
-
-
 ## Project Integration
 The Symfony bundle is published on Packagist (pre-release tags). The gateway is available as a Docker image. You only need to clone this repo if you want the full local stack with Traefik + Symfony + brokers.
 
