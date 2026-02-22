@@ -29,7 +29,8 @@ use crate::services::replay::{
     redis_idempotency_set, redis_rate_limit_allow, replay_from_dlq, ReplayState,
 };
 use crate::services::settings::Config;
-use crate::services::utils::{unix_timestamp, value_to_string};
+use crate::services::utils::{unix_timestamp, JsonBufferPool, value_to_string};
+use crate::services::redis_batch::RedisBatcher;
 
 const SIMPLE_PING: &str = r#"{"type":"ping"}"#;
 const SIMPLE_HEARTBEAT: &str = r#"{"type":"heartbeat"}"#;
@@ -39,7 +40,7 @@ const RATE_LIMITED_MESSAGE: &str = r#"{"type":"rate_limited"}"#;
 
 pub(crate) struct AppState {
     pub(crate) config: Config,
-    pub(crate) metrics: Metrics,
+    pub(crate) metrics: Arc<Metrics>,
     pub(crate) connections: ConnectionManager,
     pub(crate) ordering: OrderingService,
     pub(crate) presence: PresenceService,
@@ -47,6 +48,8 @@ pub(crate) struct AppState {
     pub(crate) rabbit: Option<Arc<RabbitPublisher>>,
     pub(crate) replay: ReplayState,
     pub(crate) http: reqwest::Client,
+    pub(crate) json_pool: Arc<JsonBufferPool>,
+    pub(crate) redis_batcher: Option<RedisBatcher>,
 }
 
 impl AppState {
@@ -73,9 +76,29 @@ impl AppState {
             .timeout(Duration::from_secs_f64(config.webhook_timeout_seconds))
             .build()
             .expect("http client");
+        let metrics = Arc::new(Metrics::new());
+        let json_pool = Arc::new(JsonBufferPool::new(
+            config.json_buffer_pool_size,
+            config.json_buffer_pool_bytes,
+        ));
+        let redis_batcher = if let Some(client) = &redis {
+            if config.redis_publish_batch_max > 1 {
+                Some(RedisBatcher::new(
+                    client.clone(),
+                    Arc::clone(&metrics),
+                    config.redis_publish_batch_max,
+                    Duration::from_millis(config.redis_publish_batch_interval_ms),
+                    config.redis_publish_batch_queue_size,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         Self {
             config,
-            metrics: Metrics::new(),
+            metrics,
             connections: ConnectionManager::new(),
             ordering: OrderingService::new(),
             presence,
@@ -83,6 +106,8 @@ impl AppState {
             rabbit,
             replay,
             http,
+            json_pool,
+            redis_batcher,
         }
     }
 
@@ -189,12 +214,15 @@ async fn handle_control_message(
     } else {
         HEARTBEAT_ACK_MESSAGE
     };
-    let sent = state
+    let outcome = state
         .connections
         .send_message(connection_id, Message::Text(reply.to_string()))
         .await;
-    if sent {
+    if outcome.sent {
         Metrics::inc(&state.metrics.ws_messages_out_total, 1);
+    }
+    if outcome.dropped {
+        Metrics::inc(&state.metrics.backpressure_dropped_total, 1);
     }
 }
 
@@ -238,7 +266,7 @@ async fn handle_socket(
     };
 
     let (mut sender, mut receiver) = socket.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<Message>();
+    let (tx, mut rx) = mpsc::channel::<Message>(state.config.ws_outbox_queue_size);
 
     state.connections.add(conn_info.clone(), tx).await;
     Metrics::inc(&state.metrics.ws_connections_total, 1);
@@ -290,15 +318,18 @@ async fn handle_socket(
 
                 if !rate_limiter.allow() {
                     Metrics::inc(&state.metrics.ws_rate_limited_total, 1);
-                    let sent = state
+                    let outcome = state
                         .connections
                         .send_message(
                             &connection_id,
                             Message::Text(RATE_LIMITED_MESSAGE.to_string()),
                         )
                         .await;
-                    if sent {
+                    if outcome.sent {
                         Metrics::inc(&state.metrics.ws_messages_out_total, 1);
+                    }
+                    if outcome.dropped {
+                        Metrics::inc(&state.metrics.backpressure_dropped_total, 1);
                     }
                     continue;
                 }
@@ -363,9 +394,12 @@ async fn publish_handler(
     }
     let subjects = payload.subjects.unwrap_or_default();
     let message = payload.payload.unwrap_or(Value::Null);
-    let sent = state.connections.send_to_subjects(&subjects, &message).await;
-    if sent > 0 {
-        Metrics::inc(&state.metrics.ws_messages_out_total, sent as u64);
+    let stats = state.connections.send_to_subjects(&subjects, &message).await;
+    if stats.sent > 0 {
+        Metrics::inc(&state.metrics.ws_messages_out_total, stats.sent as u64);
+    }
+    if stats.dropped > 0 {
+        Metrics::inc(&state.metrics.backpressure_dropped_total, stats.dropped as u64);
     }
     Metrics::inc(&state.metrics.publish_total, 1);
     let _traceparent = headers.get("traceparent");

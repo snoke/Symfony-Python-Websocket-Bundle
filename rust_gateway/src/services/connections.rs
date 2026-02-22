@@ -1,9 +1,10 @@
 use axum::extract::ws::Message;
+use dashmap::{DashMap, DashSet};
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct ConnectionInfo {
@@ -17,99 +18,132 @@ pub(crate) struct ConnectionInfo {
 
 struct ConnectionEntry {
     info: ConnectionInfo,
-    sender: mpsc::UnboundedSender<Message>,
-}
-
-struct ConnectionState {
-    connections: HashMap<String, ConnectionEntry>,
-    subjects: HashMap<String, HashSet<String>>,
+    sender: mpsc::Sender<Message>,
 }
 
 #[derive(Clone)]
 pub(crate) struct ConnectionManager {
-    inner: Arc<RwLock<ConnectionState>>,
+    connections: Arc<DashMap<String, ConnectionEntry>>,
+    subjects: Arc<DashMap<String, DashSet<String>>>,
+}
+
+pub(crate) struct SendStats {
+    pub(crate) sent: usize,
+    pub(crate) dropped: usize,
+}
+
+pub(crate) struct SendOutcome {
+    pub(crate) sent: bool,
+    pub(crate) dropped: bool,
 }
 
 impl ConnectionManager {
     pub(crate) fn new() -> Self {
         Self {
-            inner: Arc::new(RwLock::new(ConnectionState {
-                connections: HashMap::new(),
-                subjects: HashMap::new(),
-            })),
+            connections: Arc::new(DashMap::new()),
+            subjects: Arc::new(DashMap::new()),
         }
     }
 
-    pub(crate) async fn add(&self, info: ConnectionInfo, sender: mpsc::UnboundedSender<Message>) {
-        let mut state = self.inner.write().await;
+    pub(crate) async fn add(&self, info: ConnectionInfo, sender: mpsc::Sender<Message>) {
         let conn_id = info.connection_id.clone();
         for subject in &info.subjects {
-            state
+            let entry = self
                 .subjects
                 .entry(subject.to_string())
-                .or_default()
-                .insert(conn_id.clone());
+                .or_insert_with(DashSet::new);
+            entry.insert(conn_id.clone());
         }
-        state.connections.insert(conn_id, ConnectionEntry { info, sender });
+        self.connections.insert(conn_id, ConnectionEntry { info, sender });
     }
 
     pub(crate) async fn remove(&self, connection_id: &str) -> Option<ConnectionInfo> {
-        let mut state = self.inner.write().await;
-        let entry = state.connections.remove(connection_id);
-        if let Some(entry) = &entry {
+        let entry = self.connections.remove(connection_id);
+        if let Some((_key, entry)) = &entry {
             for subject in &entry.info.subjects {
-                if let Some(set) = state.subjects.get_mut(subject) {
+                if let Some(set) = self.subjects.get(subject) {
                     set.remove(connection_id);
-                    if set.is_empty() {
-                        state.subjects.remove(subject);
+                    let empty = set.is_empty();
+                    drop(set);
+                    if empty {
+                        self.subjects.remove(subject);
                     }
                 }
             }
         }
-        entry.map(|entry| entry.info)
+        entry.map(|(_, entry)| entry.info)
     }
 
-    pub(crate) async fn send_to_subjects(&self, subjects: &[String], payload: &Value) -> usize {
+    pub(crate) async fn send_to_subjects(&self, subjects: &[String], payload: &Value) -> SendStats {
         let message = json!({"type": "event", "payload": payload});
         let text = match serde_json::to_string(&message) {
             Ok(text) => text,
-            Err(_) => return 0,
-        };
-        let senders = {
-            let state = self.inner.read().await;
-            let mut targets = HashSet::new();
-            for subject in subjects {
-                if let Some(ids) = state.subjects.get(subject) {
-                    for id in ids {
-                        targets.insert(id.clone());
-                    }
+            Err(_) => {
+                return SendStats {
+                    sent: 0,
+                    dropped: 0,
                 }
             }
-            let mut senders = Vec::with_capacity(targets.len());
-            for id in targets {
-                if let Some(entry) = state.connections.get(&id) {
-                    senders.push(entry.sender.clone());
-                }
-            }
-            senders
         };
-        let mut sent = 0;
-        for sender in senders {
-            if sender.send(Message::Text(text.clone())).is_ok() {
-                sent += 1;
-            }
-        }
-        sent
+        self.send_text_to_subjects(subjects, &text).await
     }
 
-    pub(crate) async fn send_message(&self, connection_id: &str, message: Message) -> bool {
-        let sender = {
-            let state = self.inner.read().await;
-            state.connections.get(connection_id).map(|entry| entry.sender.clone())
-        };
+    pub(crate) async fn send_text_to_subjects(
+        &self,
+        subjects: &[String],
+        text: &str,
+    ) -> SendStats {
+        let mut targets = HashSet::new();
+        for subject in subjects {
+            if let Some(ids) = self.subjects.get(subject) {
+                for id in ids.iter() {
+                    targets.insert((*id).clone());
+                }
+            }
+        }
+        let mut senders = Vec::with_capacity(targets.len());
+        for id in targets {
+            if let Some(entry) = self.connections.get(&id) {
+                senders.push(entry.sender.clone());
+            }
+        }
+        let mut sent = 0;
+        let mut dropped = 0;
+        let message = text.to_string();
+        for sender in senders {
+            match sender.try_send(Message::Text(message.clone())) {
+                Ok(_) => sent += 1,
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => dropped += 1,
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
+            }
+        }
+        SendStats { sent, dropped }
+    }
+
+    pub(crate) async fn send_message(&self, connection_id: &str, message: Message) -> SendOutcome {
+        let sender = self
+            .connections
+            .get(connection_id)
+            .map(|entry| entry.sender.clone());
         match sender {
-            Some(sender) => sender.send(message).is_ok(),
-            None => false,
+            Some(sender) => match sender.try_send(message) {
+                Ok(_) => SendOutcome {
+                    sent: true,
+                    dropped: false,
+                },
+                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => SendOutcome {
+                    sent: false,
+                    dropped: true,
+                },
+                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => SendOutcome {
+                    sent: false,
+                    dropped: false,
+                },
+            },
+            None => SendOutcome {
+                sent: false,
+                dropped: false,
+            },
         }
     }
 
@@ -118,9 +152,8 @@ impl ConnectionManager {
         subject: Option<String>,
         user_id: Option<String>,
     ) -> Vec<ConnectionInfo> {
-        let state = self.inner.read().await;
         let mut results = Vec::new();
-        for entry in state.connections.values() {
+        for entry in self.connections.iter() {
             if let Some(ref s) = subject {
                 if !entry.info.subjects.iter().any(|item| item == s) {
                     continue;

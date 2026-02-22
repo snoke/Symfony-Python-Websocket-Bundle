@@ -22,3 +22,4 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 lapin = { version = "2.3", default-features = false, features = ["rustls"] }
+dashmap = "5"

@@ -7,6 +7,8 @@ use lapin::{
     types::{AMQPValue, FieldTable, LongString},
     BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind,
 };
+use serde::Deserialize;
+use serde_json::value::RawValue;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -37,6 +39,22 @@ struct RabbitConfig {
 struct RabbitPublishState {
     connection: Option<Connection>,
     channel: Option<Channel>,
+}
+
+#[derive(Deserialize)]
+struct OutboxMessageRaw {
+    subjects: Vec<String>,
+    #[serde(default)]
+    payload: Option<Box<RawValue>>,
+}
+
+fn build_event_text(payload: Option<&RawValue>) -> String {
+    let raw = payload.map(|v| v.get()).unwrap_or("null");
+    let mut text = String::with_capacity(raw.len() + 28);
+    text.push_str(r#"{"type":"event","payload":"#);
+    text.push_str(raw);
+    text.push('}');
+    text
 }
 
 pub(crate) struct RabbitPublisher {
@@ -279,25 +297,25 @@ pub(crate) async fn redis_outbox_consumer(state: Arc<AppState>) {
                                 for (id, fields) in entries {
                                     last_id = id;
                                     if let Some(raw) = fields.get("data") {
-                                        if let Ok(value) = serde_json::from_str::<Value>(raw) {
-                                            let subjects = value
-                                                .get("subjects")
-                                                .and_then(|v| v.as_array())
-                                                .map(|arr| {
-                                                    arr.iter()
-                                                        .filter_map(|item| {
-                                                            item.as_str().map(|s| s.to_string())
-                                                        })
-                                                        .collect::<Vec<_>>()
-                                                })
-                                                .unwrap_or_default();
-                                            let payload = value.get("payload").cloned().unwrap_or(Value::Null);
-                                            let sent =
-                                                state.connections.send_to_subjects(&subjects, &payload).await;
-                                            if sent > 0 {
+                                        if let Ok(value) =
+                                            serde_json::from_str::<OutboxMessageRaw>(raw)
+                                        {
+                                            let text =
+                                                build_event_text(value.payload.as_deref());
+                                            let stats = state
+                                                .connections
+                                                .send_text_to_subjects(&value.subjects, &text)
+                                                .await;
+                                            if stats.sent > 0 {
                                                 Metrics::inc(
                                                     &state.metrics.ws_messages_out_total,
-                                                    sent as u64,
+                                                    stats.sent as u64,
+                                                );
+                                            }
+                                            if stats.dropped > 0 {
+                                                Metrics::inc(
+                                                    &state.metrics.backpressure_dropped_total,
+                                                    stats.dropped as u64,
                                                 );
                                             }
                                         }
@@ -429,23 +447,22 @@ pub(crate) async fn rabbit_outbox_consumer(state: Arc<AppState>) {
                     match delivery {
                         Ok(delivery) => {
                             let raw = delivery.data.clone();
-                            if let Ok(value) = serde_json::from_slice::<Value>(&raw) {
-                                let subjects = value
-                                    .get("subjects")
-                                    .and_then(|v| v.as_array())
-                                    .map(|arr| {
-                                        arr.iter()
-                                            .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                                            .collect::<Vec<_>>()
-                                    })
-                                    .unwrap_or_default();
-                                let payload = value.get("payload").cloned().unwrap_or(Value::Null);
-                                let sent =
-                                    state.connections.send_to_subjects(&subjects, &payload).await;
-                                if sent > 0 {
+                            if let Ok(value) = serde_json::from_slice::<OutboxMessageRaw>(&raw) {
+                                let text = build_event_text(value.payload.as_deref());
+                                let stats = state
+                                    .connections
+                                    .send_text_to_subjects(&value.subjects, &text)
+                                    .await;
+                                if stats.sent > 0 {
                                     Metrics::inc(
                                         &state.metrics.ws_messages_out_total,
-                                        sent as u64,
+                                        stats.sent as u64,
+                                    );
+                                }
+                                if stats.dropped > 0 {
+                                    Metrics::inc(
+                                        &state.metrics.backpressure_dropped_total,
+                                        stats.dropped as u64,
                                     );
                                 }
                             } else {

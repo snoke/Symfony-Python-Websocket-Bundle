@@ -31,6 +31,12 @@ pub(crate) struct Config {
     pub(crate) webhook_timeout_seconds: f64,
     pub(crate) ws_rate_limit_per_sec: f64,
     pub(crate) ws_rate_limit_burst: f64,
+    pub(crate) ws_outbox_queue_size: usize,
+    pub(crate) redis_publish_batch_max: usize,
+    pub(crate) redis_publish_batch_interval_ms: u64,
+    pub(crate) redis_publish_batch_queue_size: usize,
+    pub(crate) json_buffer_pool_size: usize,
+    pub(crate) json_buffer_pool_bytes: usize,
     pub(crate) ordering_strategy: String,
     pub(crate) ordering_topic_field: String,
     pub(crate) ordering_subject_source: String,
@@ -119,6 +125,12 @@ impl Config {
         let webhook_timeout_seconds = env_f64("WEBHOOK_TIMEOUT_SECONDS", 5.0);
         let ws_rate_limit_per_sec = env_f64("WS_RATE_LIMIT_PER_SEC", 10.0);
         let ws_rate_limit_burst = env_f64("WS_RATE_LIMIT_BURST", 20.0);
+        let ws_outbox_queue_size = env_usize("WS_OUTBOX_QUEUE_SIZE", 1024);
+        let redis_publish_batch_max = env_usize("REDIS_PUBLISH_BATCH_MAX", 0);
+        let redis_publish_batch_interval_ms = env_u64("REDIS_PUBLISH_BATCH_INTERVAL_MS", 5);
+        let redis_publish_batch_queue_size = env_usize("REDIS_PUBLISH_BATCH_QUEUE_SIZE", 1024);
+        let json_buffer_pool_size = env_usize("JSON_BUFFER_POOL_SIZE", 64);
+        let json_buffer_pool_bytes = env_usize("JSON_BUFFER_POOL_BYTES", 16384);
         let ordering_strategy = env_str("ORDERING_STRATEGY", "none").to_lowercase();
         let ordering_topic_field = env_str("ORDERING_TOPIC_FIELD", "topic");
         let ordering_subject_source = env_str("ORDERING_SUBJECT_SOURCE", "subject");
@@ -186,6 +198,11 @@ impl Config {
         } else {
             replay_rate_limit_window_seconds
         };
+        let ws_outbox_queue_size = ws_outbox_queue_size.clamp(1, 100000);
+        let redis_publish_batch_interval_ms = redis_publish_batch_interval_ms.max(1);
+        let redis_publish_batch_queue_size = redis_publish_batch_queue_size.clamp(1, 100000);
+        let json_buffer_pool_size = json_buffer_pool_size.clamp(1, 10000);
+        let json_buffer_pool_bytes = json_buffer_pool_bytes.clamp(256, 1024 * 1024);
 
         Self {
             jwt_alg,
@@ -219,6 +236,12 @@ impl Config {
             webhook_timeout_seconds,
             ws_rate_limit_per_sec,
             ws_rate_limit_burst,
+            ws_outbox_queue_size,
+            redis_publish_batch_max,
+            redis_publish_batch_interval_ms,
+            redis_publish_batch_queue_size,
+            json_buffer_pool_size,
+            json_buffer_pool_bytes,
             ordering_strategy,
             ordering_topic_field,
             ordering_subject_source,
@@ -299,6 +322,13 @@ fn env_u32(key: &str, default: u32) -> u32 {
     std::env::var(key)
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(default)
+}
+
+fn env_u64(key: &str, default: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(default)
 }
 

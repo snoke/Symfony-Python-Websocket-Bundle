@@ -8,6 +8,7 @@ pub(crate) mod metrics;
 pub(crate) mod ordering;
 pub(crate) mod presence;
 pub(crate) mod rate_limit;
+pub(crate) mod redis_batch;
 pub(crate) mod replay;
 pub(crate) mod settings;
 pub(crate) mod utils;

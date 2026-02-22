@@ -102,12 +102,19 @@ async fn publish_event(
         .ordering
         .apply_partition(&state.config, stream, routing_key, ordering_key);
 
-    let mut encoded_cache: Option<String> = None;
-    let mut ensure_encoded = |cache: &mut Option<String>| {
+    let mut encoded_cache: Option<Vec<u8>> = None;
+    let mut pooled = false;
+    let mut ensure_encoded = |cache: &mut Option<Vec<u8>>| {
         if cache.is_none() {
             let body = normalize_json(payload.clone());
-            let encoded = serde_json::to_string(&body).unwrap_or_else(|_| "{}".to_string());
-            *cache = Some(encoded);
+            let mut buffer = state.json_pool.take();
+            buffer.clear();
+            if serde_json::to_writer(&mut buffer, &body).is_err() {
+                buffer.clear();
+                buffer.extend_from_slice(b"{}");
+            }
+            pooled = true;
+            *cache = Some(buffer);
         }
     };
 
@@ -115,25 +122,33 @@ async fn publish_event(
         if let Some(client) = &state.redis {
             if !stream.is_empty() {
                 ensure_encoded(&mut encoded_cache);
-                let encoded = encoded_cache.as_deref().unwrap_or("{}");
-                if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
-                    let result: redis::RedisResult<()> = redis::cmd("XADD")
-                        .arg(&stream)
-                        .arg("*")
-                        .arg("data")
-                        .arg(encoded)
-                        .query_async(&mut conn)
-                        .await;
-                    if result.is_ok() {
-                        Metrics::inc(&state.metrics.broker_publish_total, 1);
+                let encoded = encoded_cache.as_ref().map(|buf| buf.as_slice()).unwrap_or(b"{}");
+                let mut enqueued = false;
+                if let Some(batcher) = &state.redis_batcher {
+                    if let Some(bytes) = encoded_cache.as_ref() {
+                        enqueued = batcher.enqueue(stream.clone(), bytes.clone());
+                    }
+                }
+                if !enqueued {
+                    if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
+                        let result: redis::RedisResult<()> = redis::cmd("XADD")
+                            .arg(&stream)
+                            .arg("*")
+                            .arg("data")
+                            .arg(encoded)
+                            .query_async(&mut conn)
+                            .await;
+                        if result.is_ok() {
+                            Metrics::inc(&state.metrics.broker_publish_total, 1);
+                        }
                     }
                 }
             }
         }
         if let Some(rabbit) = &state.rabbit {
             ensure_encoded(&mut encoded_cache);
-            let encoded = encoded_cache.as_deref().unwrap_or("{}");
-            if rabbit.publish_raw(exchange, routing_key.as_str(), encoded.as_bytes()).await {
+            let encoded = encoded_cache.as_ref().map(|buf| buf.as_slice()).unwrap_or(b"{}");
+            if rabbit.publish_raw(exchange, routing_key.as_str(), encoded).await {
                 Metrics::inc(&state.metrics.broker_publish_total, 1);
             }
         }
@@ -142,7 +157,7 @@ async fn publish_event(
     if state.config.events_mode_webhook() {
         if !state.config.symfony_webhook_url.is_empty() {
             ensure_encoded(&mut encoded_cache);
-            let body = encoded_cache.clone().unwrap_or_else(|| "{}".to_string());
+            let body = encoded_cache.clone().unwrap_or_else(|| b"{}".to_vec());
             let mut headers = reqwest::header::HeaderMap::new();
             if let Some(traceparent) = payload.get("traceparent").and_then(|v| v.as_str()) {
                 if let Ok(value) = reqwest::header::HeaderValue::from_str(traceparent) {
@@ -162,7 +177,7 @@ async fn publish_event(
                 }
             }
             if !state.config.symfony_webhook_secret.is_empty() {
-                let signature = hmac_sha256(&state.config.symfony_webhook_secret, body.as_bytes());
+                let signature = hmac_sha256(&state.config.symfony_webhook_secret, &body);
                 let value = format!("sha256={signature}");
                 if let Ok(header_value) = reqwest::header::HeaderValue::from_str(&value) {
                     headers.insert("X-Webhook-Signature", header_value);
@@ -193,6 +208,11 @@ async fn publish_event(
                     }
                 }
             }
+        }
+    }
+    if pooled {
+        if let Some(buffer) = encoded_cache.take() {
+            state.json_pool.put(buffer);
         }
     }
 }
