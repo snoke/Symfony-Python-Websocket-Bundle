@@ -1,6 +1,6 @@
 services:
   gateway:
-    image: ghcr.io/snoke/ws-gateway:0.1.1-alpha.2
+    image: ghcr.io/snoke/ws-gateway:0.1.2
     environment:
       - WS_MODE=core
       - EVENTS_MODE=broker

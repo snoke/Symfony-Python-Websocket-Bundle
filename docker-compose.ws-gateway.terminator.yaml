@@ -1,6 +1,6 @@
 services:
   gateway:
-    image: ghcr.io/snoke/ws-gateway:0.1.1-alpha.2
+    image: ghcr.io/snoke/ws-gateway:0.1.2
     environment:
       - WS_MODE=terminator
       - SYMFONY_WEBHOOK_URL=${SYMFONY_WEBHOOK_URL:-http://host.docker.internal:8000/internal/ws/events}

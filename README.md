@@ -62,11 +62,11 @@ The Symfony bundle is published on Packagist (pre-release tags). The gateway is 
 
 ### 1) Install the Symfony bundle (pre-release)
 ```
-composer require snoke/ws-bundle:0.1.1-alpha.2 --ignore-platform-req=ext-grpc
+composer require snoke/ws-bundle:0.1.2 --ignore-platform-req=ext-grpc
 ```
 If you actually need gRPC (e.g. OTEL gRPC exporter), install `ext-grpc` and run:
 ```
-composer require snoke/ws-bundle:0.1.1-alpha.2
+composer require snoke/ws-bundle:0.1.2
 ```
 
 ### 2) Run the gateway image

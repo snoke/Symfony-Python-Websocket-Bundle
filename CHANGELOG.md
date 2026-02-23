@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.1.2] - 2026-02-23
 ### Added
 - MIT License file.
 - Experimental Rust gateway with Docker Compose override (`docker-compose.rust-gateway.yaml`).
@@ -13,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rust gateway tuning knobs: bounded WS outbox queue + optional Redis publish batching + JSON buffer pool sizing envs.
 - Gateway smoke tests now include Redis outbox delivery check (core mode).
 - Python gateway presence refresh tuning envs: `PRESENCE_REFRESH_ON_MESSAGE`, `PRESENCE_REFRESH_MIN_INTERVAL_SECONDS`, `PRESENCE_REFRESH_QUEUE_SIZE`.
+- Gateway internal message envelope with optional Snowflake IDs (Python + Rust).
+- Channel-based routing option (`CHANNEL_ROUTING_STRATEGY=channel_id`).
+- Gateway role support (`GATEWAY_ROLE=read|write|both`) in Python + Rust.
+- Python gateway WS outbox buffering with drop strategy (`WS_OUTBOX_QUEUE_SIZE`, `WS_OUTBOX_DROP_STRATEGY`).
 
 ### Changed
 - Docs: clarify pre-release tagging for Composer and Docker (no stable/latest tags yet).
@@ -20,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docs: add gateway image quickstart to avoid repo clone.
 - Docs: add ready-to-download gateway compose files for quickstart.
 - Docs: remove smoke test instructions from README.
+- Docs: move detailed core/terminator/test client/event schema to `dev.md`.
 - Python gateway hot path optimizations (control-message fast path, pre-serialized event payloads for WS/broker/webhook).
 - Presence updates now use Redis pipelines and a queued refresh worker to reduce load.
 - Outbox consumer starts at latest when replay is disabled (`REPLAY_STRATEGY=none`).
