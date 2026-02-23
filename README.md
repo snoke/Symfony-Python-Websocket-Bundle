@@ -136,7 +136,7 @@ docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml exec 
 
 Useful env vars in core:
 - `WS_MODE=core`
-- `EVENTS_MODE=broker|both|none`
+- `EVENTS_MODE=broker|webhook|both|none`
 - `WS_REDIS_DSN` / `WS_RABBITMQ_DSN`
 - `WS_CONSUMER_LOG_LEVEL`
 
