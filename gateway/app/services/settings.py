@@ -89,6 +89,8 @@ def load_settings() -> Settings:
     REPLAY_AUDIT_LOG = os.getenv("REPLAY_AUDIT_LOG", "1").lower() in ("1", "true", "yes", "on")
     WS_RATE_LIMIT_PER_SEC = float(os.getenv("WS_RATE_LIMIT_PER_SEC", "10"))
     WS_RATE_LIMIT_BURST = float(os.getenv("WS_RATE_LIMIT_BURST", "20"))
+    WS_OUTBOX_QUEUE_SIZE = int(os.getenv("WS_OUTBOX_QUEUE_SIZE", "1024"))
+    WS_OUTBOX_DROP_STRATEGY = os.getenv("WS_OUTBOX_DROP_STRATEGY", "drop_oldest").lower()
     BACKPRESSURE_STRATEGY = os.getenv("BACKPRESSURE_STRATEGY", "none").lower()
     BACKPRESSURE_PER_CONN_BUFFER = int(os.getenv("BACKPRESSURE_PER_CONN_BUFFER", "0"))
     BACKPRESSURE_GLOBAL_BUFFER = int(os.getenv("BACKPRESSURE_GLOBAL_BUFFER", "0"))
@@ -161,6 +163,10 @@ def load_settings() -> Settings:
         BACKPRESSURE_GLOBAL_BUFFER = 0
     if BACKPRESSURE_MAX_INFLIGHT < 0:
         BACKPRESSURE_MAX_INFLIGHT = 0
+    if WS_OUTBOX_QUEUE_SIZE < 1:
+        WS_OUTBOX_QUEUE_SIZE = 1
+    if WS_OUTBOX_DROP_STRATEGY not in ("drop_oldest", "drop_newest"):
+        WS_OUTBOX_DROP_STRATEGY = "drop_oldest"
     if GATEWAY_ROLE not in ("read", "write", "both"):
         GATEWAY_ROLE = "both"
     if CHANNEL_ROUTING_STRATEGY not in ("none", "channel_id"):
@@ -257,6 +263,8 @@ def load_settings() -> Settings:
         REPLAY_AUDIT_LOG=REPLAY_AUDIT_LOG,
         WS_RATE_LIMIT_PER_SEC=WS_RATE_LIMIT_PER_SEC,
         WS_RATE_LIMIT_BURST=WS_RATE_LIMIT_BURST,
+        WS_OUTBOX_QUEUE_SIZE=WS_OUTBOX_QUEUE_SIZE,
+        WS_OUTBOX_DROP_STRATEGY=WS_OUTBOX_DROP_STRATEGY,
         BACKPRESSURE_STRATEGY=BACKPRESSURE_STRATEGY,
         BACKPRESSURE_PER_CONN_BUFFER=BACKPRESSURE_PER_CONN_BUFFER,
         BACKPRESSURE_GLOBAL_BUFFER=BACKPRESSURE_GLOBAL_BUFFER,

@@ -217,7 +217,7 @@ class GatewayApp:
         finally:
             self._metrics.inc("ws_disconnects_total")
             self._logger.log("ws_disconnected", connection_id=conn.id, user_id=conn.user_id)
-            self._connections.remove(conn)
+            await self._connections.remove(conn)
             if conn.buffer_task and not conn.buffer_task.done():
                 conn.buffer_task.cancel()
             dropped = len(conn.buffer)

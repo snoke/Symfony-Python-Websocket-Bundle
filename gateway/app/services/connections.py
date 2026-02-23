@@ -25,6 +25,11 @@ class Connection:
         self.buffer: Deque[Tuple[Dict[str, Any], str, InternalMessage]] = deque()
         self.buffer_event = asyncio.Event()
         self.buffer_task: Optional[asyncio.Task] = None
+        self.outbox: Deque[str] = deque()
+        self.outbox_event = asyncio.Event()
+        self.outbox_task: Optional[asyncio.Task] = None
+        self._outbox_lock = asyncio.Lock()
+        self._closed = False
 
     def allow_message(self) -> bool:
         if self._settings.WS_RATE_LIMIT_PER_SEC <= 0:
@@ -41,6 +46,44 @@ class Connection:
             return True
         return False
 
+    async def enqueue_outbox(self, text: str) -> bool:
+        async with self._outbox_lock:
+            if self._closed:
+                return False
+            if len(self.outbox) >= self._settings.WS_OUTBOX_QUEUE_SIZE:
+                if self._settings.WS_OUTBOX_DROP_STRATEGY == "drop_oldest" and self.outbox:
+                    self.outbox.popleft()
+                else:
+                    return False
+            self.outbox.append(text)
+            if not self.outbox_task or self.outbox_task.done():
+                self.outbox_task = asyncio.create_task(self._drain_outbox())
+            self.outbox_event.set()
+        return True
+
+    async def _drain_outbox(self) -> None:
+        while True:
+            await self.outbox_event.wait()
+            while True:
+                async with self._outbox_lock:
+                    if not self.outbox:
+                        self.outbox_event.clear()
+                        if self._closed:
+                            return
+                        break
+                    text = self.outbox.popleft()
+                try:
+                    await self.websocket.send_text(text)
+                except Exception:
+                    await self.close()
+                    return
+
+    async def close(self) -> None:
+        async with self._outbox_lock:
+            self._closed = True
+            self.outbox.clear()
+            self.outbox_event.set()
+
 
 class ConnectionManager:
     def __init__(self, settings: Settings) -> None:
@@ -55,7 +98,7 @@ class ConnectionManager:
             self.subjects_index.setdefault(subject, set()).add(conn.id)
         return conn
 
-    def remove(self, conn: Connection) -> None:
+    async def remove(self, conn: Connection) -> None:
         self.connections.pop(conn.id, None)
         for subject in list(conn.subjects):
             ids = self.subjects_index.get(subject)
@@ -63,6 +106,7 @@ class ConnectionManager:
                 ids.discard(conn.id)
                 if not ids:
                     self.subjects_index.pop(subject, None)
+        await conn.close()
 
     async def send_to_subjects(self, subjects: List[str], payload: Any) -> int:
         try:
@@ -78,9 +122,6 @@ class ConnectionManager:
             conn = self.connections.get(cid)
             if conn is None:
                 continue
-            try:
-                await conn.websocket.send_text(text)
+            if await conn.enqueue_outbox(text):
                 sent += 1
-            except Exception:
-                pass
         return sent
