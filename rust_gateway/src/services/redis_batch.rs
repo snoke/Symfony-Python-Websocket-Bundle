@@ -13,6 +13,7 @@ pub(crate) struct RedisBatcher {
 struct RedisBatchItem {
     stream: String,
     data: Vec<u8>,
+    maxlen: Option<usize>,
 }
 
 impl RedisBatcher {
@@ -63,8 +64,19 @@ impl RedisBatcher {
         Self { tx }
     }
 
-    pub(crate) fn enqueue(&self, stream: String, data: Vec<u8>) -> bool {
-        self.tx.try_send(RedisBatchItem { stream, data }).is_ok()
+    pub(crate) fn enqueue(
+        &self,
+        stream: String,
+        data: Vec<u8>,
+        maxlen: Option<usize>,
+    ) -> bool {
+        self.tx
+            .try_send(RedisBatchItem {
+                stream,
+                data,
+                maxlen,
+            })
+            .is_ok()
     }
 }
 
@@ -76,11 +88,12 @@ async fn flush_batch(client: &redis::Client, metrics: &Metrics, batch: &mut Vec<
         Ok(mut conn) => {
             let mut pipe = redis::pipe();
             for item in batch.iter() {
-                pipe.cmd("XADD")
-                    .arg(&item.stream)
-                    .arg("*")
-                    .arg("data")
-                    .arg(&item.data);
+                let mut cmd = pipe.cmd("XADD");
+                cmd.arg(&item.stream);
+                if let Some(maxlen) = item.maxlen {
+                    cmd.arg("MAXLEN").arg("~").arg(maxlen);
+                }
+                cmd.arg("*").arg("data").arg(&item.data);
             }
             let result: redis::RedisResult<()> = pipe.query_async(&mut conn).await;
             if result.is_ok() {

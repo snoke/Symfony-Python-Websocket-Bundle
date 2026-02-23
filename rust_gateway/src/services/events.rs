@@ -8,6 +8,7 @@ use crate::services::app::AppState;
 use crate::services::connections::ConnectionInfo;
 use crate::services::metrics::Metrics;
 use crate::services::settings::Config;
+use crate::services::message::InternalMessage;
 use crate::services::utils::{normalize_json, value_to_string};
 
 pub(crate) async fn publish_message_event(
@@ -15,14 +16,23 @@ pub(crate) async fn publish_message_event(
     conn: &ConnectionInfo,
     data: &Value,
     raw: &str,
+    internal: &InternalMessage,
 ) {
     let traceparent = extract_traceparent(data).or_else(|| conn.traceparent.clone());
     let trace_id = extract_trace_id(data, &state.config);
-    let ordering_key = state.ordering.derive_ordering_key(&state.config, conn, data);
+    let mut ordering_key = state.ordering.derive_ordering_key(&state.config, conn, data);
+    if state.config.channel_routing_enabled() && !internal.channel_id.is_empty() {
+        ordering_key = internal.channel_id.clone();
+    }
     let mut payload = json!({
         "type": "message_received",
+        "internal_id": internal.internal_id.clone(),
+        "timestamp_ms": internal.timestamp_ms,
+        "user_id": internal.user_id.clone(),
+        "channel_id": internal.channel_id.clone(),
+        "flags": internal.flags.clone(),
+        "payload": internal.payload.clone(),
         "connection_id": conn.connection_id.clone(),
-        "user_id": conn.user_id.clone(),
         "subjects": conn.subjects.clone(),
         "connected_at": conn.connected_at,
         "message": data.clone(),
@@ -41,10 +51,12 @@ pub(crate) async fn publish_message_event(
     if !ordering_key.is_empty() {
         if let Some(map) = payload.as_object_mut() {
             map.insert("ordering_key".to_string(), Value::String(ordering_key.clone()));
-            map.insert(
-                "ordering_strategy".to_string(),
-                Value::String(state.config.ordering_strategy.clone()),
-            );
+            let strategy = if state.config.channel_routing_enabled() {
+                state.config.channel_routing_strategy.clone()
+            } else {
+                state.config.ordering_strategy.clone()
+            };
+            map.insert("ordering_strategy".to_string(), Value::String(strategy));
         }
     }
 
@@ -123,21 +135,32 @@ async fn publish_event(
             if !stream.is_empty() {
                 ensure_encoded(&mut encoded_cache);
                 let encoded = encoded_cache.as_ref().map(|buf| buf.as_slice()).unwrap_or(b"{}");
+                let maxlen = if state.config.replay_strategy == "bounded"
+                    && state.config.redis_stream_maxlen > 0
+                {
+                    Some(state.config.redis_stream_maxlen)
+                } else {
+                    None
+                };
                 let mut enqueued = false;
                 if let Some(batcher) = &state.redis_batcher {
                     if let Some(bytes) = encoded_cache.as_ref() {
-                        enqueued = batcher.enqueue(stream.clone(), bytes.clone());
+                        enqueued = batcher.enqueue(stream.clone(), bytes.clone(), maxlen);
                     }
                 }
                 if !enqueued {
                     if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
-                        let result: redis::RedisResult<()> = redis::cmd("XADD")
-                            .arg(&stream)
-                            .arg("*")
-                            .arg("data")
-                            .arg(encoded)
-                            .query_async(&mut conn)
-                            .await;
+                        let mut cmd = redis::cmd("XADD");
+                        cmd.arg(&stream);
+                        if state.config.replay_strategy == "bounded"
+                            && state.config.redis_stream_maxlen > 0
+                        {
+                            cmd.arg("MAXLEN")
+                                .arg("~")
+                                .arg(state.config.redis_stream_maxlen);
+                        }
+                        cmd.arg("*").arg("data").arg(encoded);
+                        let result: redis::RedisResult<()> = cmd.query_async(&mut conn).await;
                         if result.is_ok() {
                             Metrics::inc(&state.metrics.broker_publish_total, 1);
                         }

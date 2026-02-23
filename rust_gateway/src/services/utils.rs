@@ -42,6 +42,13 @@ pub(crate) fn unix_timestamp() -> i64 {
         .as_secs() as i64
 }
 
+pub(crate) fn unix_timestamp_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_millis() as i64
+}
+
 pub(crate) fn unix_timestamp_f64() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

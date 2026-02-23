@@ -18,6 +18,7 @@ use tracing::warn;
 
 use crate::services::app::AppState;
 use crate::services::metrics::Metrics;
+use crate::services::message::InternalMessage;
 use crate::services::settings::Config;
 use crate::services::utils::normalize_json;
 
@@ -48,8 +49,19 @@ struct OutboxMessageRaw {
     payload: Option<Box<RawValue>>,
 }
 
-fn build_event_text(payload: Option<&RawValue>) -> String {
+fn build_event_text(payload: Option<&RawValue>, strip_internal: bool) -> String {
     let raw = payload.map(|v| v.get()).unwrap_or("null");
+    if strip_internal {
+        if let Ok(internal) = serde_json::from_str::<InternalMessage>(raw) {
+            if let Ok(client_json) = serde_json::to_string(&internal.to_client_payload()) {
+                let mut text = String::with_capacity(client_json.len() + 28);
+                text.push_str(r#"{"type":"event","payload":"#);
+                text.push_str(&client_json);
+                text.push('}');
+                return text;
+            }
+        }
+    }
     let mut text = String::with_capacity(raw.len() + 28);
     text.push_str(r#"{"type":"event","payload":"#);
     text.push_str(raw);
@@ -270,7 +282,11 @@ fn rabbit_queue_args(ttl_ms: i64, dlq_exchange: &str, dlq_queue: &str) -> FieldT
 
 pub(crate) async fn redis_outbox_consumer(state: Arc<AppState>) {
     let Some(client) = &state.redis else { return; };
-    let mut last_id = "0-0".to_string();
+    let mut last_id = if state.config.replay_strategy == "none" {
+        "$".to_string()
+    } else {
+        "0-0".to_string()
+    };
     let mut backoff = 1.0;
     loop {
         match client.get_multiplexed_async_connection().await {
@@ -300,8 +316,10 @@ pub(crate) async fn redis_outbox_consumer(state: Arc<AppState>) {
                                         if let Ok(value) =
                                             serde_json::from_str::<OutboxMessageRaw>(raw)
                                         {
-                                            let text =
-                                                build_event_text(value.payload.as_deref());
+                                            let text = build_event_text(
+                                                value.payload.as_deref(),
+                                                state.config.outbox_strip_internal,
+                                            );
                                             let stats = state
                                                 .connections
                                                 .send_text_to_subjects(&value.subjects, &text)
@@ -448,7 +466,10 @@ pub(crate) async fn rabbit_outbox_consumer(state: Arc<AppState>) {
                         Ok(delivery) => {
                             let raw = delivery.data.clone();
                             if let Ok(value) = serde_json::from_slice::<OutboxMessageRaw>(&raw) {
-                                let text = build_event_text(value.payload.as_deref());
+                                let text = build_event_text(
+                                    value.payload.as_deref(),
+                                    state.config.outbox_strip_internal,
+                                );
                                 let stats = state
                                     .connections
                                     .send_text_to_subjects(&value.subjects, &text)

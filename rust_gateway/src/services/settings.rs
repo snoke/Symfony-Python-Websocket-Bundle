@@ -8,6 +8,7 @@ pub(crate) struct Config {
     pub(crate) jwt_issuer: String,
     pub(crate) jwt_audience: String,
     pub(crate) jwt_leeway: i64,
+    pub(crate) gateway_role: String,
     pub(crate) ws_mode: String,
     pub(crate) events_mode: String,
     pub(crate) symfony_webhook_url: String,
@@ -32,16 +33,24 @@ pub(crate) struct Config {
     pub(crate) ws_rate_limit_per_sec: f64,
     pub(crate) ws_rate_limit_burst: f64,
     pub(crate) ws_outbox_queue_size: usize,
+    pub(crate) ws_outbox_drop_strategy: String,
+    pub(crate) outbox_strip_internal: bool,
     pub(crate) redis_publish_batch_max: usize,
     pub(crate) redis_publish_batch_interval_ms: u64,
     pub(crate) redis_publish_batch_queue_size: usize,
     pub(crate) json_buffer_pool_size: usize,
     pub(crate) json_buffer_pool_bytes: usize,
+    pub(crate) redis_stream_maxlen: usize,
+    pub(crate) replay_strategy: String,
     pub(crate) ordering_strategy: String,
     pub(crate) ordering_topic_field: String,
     pub(crate) ordering_subject_source: String,
+    pub(crate) channel_routing_strategy: String,
     pub(crate) ordering_partition_mode: String,
     pub(crate) ordering_partition_max_len: usize,
+    pub(crate) snowflake_enabled: bool,
+    pub(crate) snowflake_worker_id: u16,
+    pub(crate) snowflake_epoch_ms: i64,
     pub(crate) rabbitmq_dsn: String,
     pub(crate) rabbitmq_queue: String,
     pub(crate) rabbitmq_exchange: String,
@@ -95,6 +104,7 @@ impl Config {
         let jwt_issuer = env_str("JWT_ISSUER", "");
         let jwt_audience = env_str("JWT_AUDIENCE", "");
         let jwt_leeway = env_i64("JWT_LEEWAY", 0);
+        let gateway_role = env_str("GATEWAY_ROLE", "both").to_lowercase();
         let ws_mode = env_str("WS_MODE", "terminator").to_lowercase();
         let mut events_mode = env_str("EVENTS_MODE", "").to_lowercase();
         if events_mode.is_empty() {
@@ -126,16 +136,25 @@ impl Config {
         let ws_rate_limit_per_sec = env_f64("WS_RATE_LIMIT_PER_SEC", 10.0);
         let ws_rate_limit_burst = env_f64("WS_RATE_LIMIT_BURST", 20.0);
         let ws_outbox_queue_size = env_usize("WS_OUTBOX_QUEUE_SIZE", 1024);
+        let ws_outbox_drop_strategy =
+            env_str("WS_OUTBOX_DROP_STRATEGY", "drop_oldest").to_lowercase();
+        let outbox_strip_internal = env_bool("OUTBOX_STRIP_INTERNAL", false);
         let redis_publish_batch_max = env_usize("REDIS_PUBLISH_BATCH_MAX", 0);
         let redis_publish_batch_interval_ms = env_u64("REDIS_PUBLISH_BATCH_INTERVAL_MS", 5);
         let redis_publish_batch_queue_size = env_usize("REDIS_PUBLISH_BATCH_QUEUE_SIZE", 1024);
         let json_buffer_pool_size = env_usize("JSON_BUFFER_POOL_SIZE", 64);
         let json_buffer_pool_bytes = env_usize("JSON_BUFFER_POOL_BYTES", 16384);
+        let redis_stream_maxlen = env_usize("REDIS_STREAM_MAXLEN", 0);
+        let replay_strategy = env_str("REPLAY_STRATEGY", "none").to_lowercase();
         let ordering_strategy = env_str("ORDERING_STRATEGY", "none").to_lowercase();
         let ordering_topic_field = env_str("ORDERING_TOPIC_FIELD", "topic");
         let ordering_subject_source = env_str("ORDERING_SUBJECT_SOURCE", "subject");
+        let channel_routing_strategy = env_str("CHANNEL_ROUTING_STRATEGY", "none").to_lowercase();
         let ordering_partition_mode = env_str("ORDERING_PARTITION_MODE", "suffix").to_lowercase();
         let ordering_partition_max_len = env_usize("ORDERING_PARTITION_MAX_LEN", 64);
+        let snowflake_enabled = env_bool("SNOWFLAKE_ENABLED", true);
+        let snowflake_worker_id = env_i64("SNOWFLAKE_WORKER_ID", 0);
+        let snowflake_epoch_ms = env_i64("SNOWFLAKE_EPOCH_MS", 1704067200000);
         let rabbitmq_dsn = env_str("RABBITMQ_DSN", "");
         let rabbitmq_queue = env_str("RABBITMQ_QUEUE", "");
         let rabbitmq_exchange = env_str("RABBITMQ_EXCHANGE", "");
@@ -188,9 +207,25 @@ impl Config {
             "suffix" | "none" => ordering_partition_mode,
             _ => "suffix".to_string(),
         };
+        let gateway_role = match gateway_role.as_str() {
+            "read" | "write" | "both" => gateway_role,
+            _ => "both".to_string(),
+        };
         let presence_strategy = match presence_strategy.as_str() {
             "ttl" | "heartbeat" | "session" => presence_strategy,
             _ => "ttl".to_string(),
+        };
+        let ws_outbox_drop_strategy = match ws_outbox_drop_strategy.as_str() {
+            "drop_oldest" | "drop_newest" => ws_outbox_drop_strategy,
+            _ => "drop_oldest".to_string(),
+        };
+        let replay_strategy = match replay_strategy.as_str() {
+            "none" | "bounded" | "durable" => replay_strategy,
+            _ => "none".to_string(),
+        };
+        let channel_routing_strategy = match channel_routing_strategy.as_str() {
+            "none" | "channel_id" => channel_routing_strategy,
+            _ => "none".to_string(),
         };
         let replay_rate_limit_per_minute = replay_rate_limit_per_minute.max(0);
         let replay_rate_limit_window_seconds = if replay_rate_limit_window_seconds <= 0 {
@@ -203,6 +238,18 @@ impl Config {
         let redis_publish_batch_queue_size = redis_publish_batch_queue_size.clamp(1, 100000);
         let json_buffer_pool_size = json_buffer_pool_size.clamp(1, 10000);
         let json_buffer_pool_bytes = json_buffer_pool_bytes.clamp(256, 1024 * 1024);
+        let redis_stream_maxlen = redis_stream_maxlen.min(1_000_000);
+        let snowflake_epoch_ms = if snowflake_epoch_ms > 0 {
+            snowflake_epoch_ms
+        } else {
+            1704067200000
+        };
+        let snowflake_worker_id = snowflake_worker_id.clamp(0, 1023) as u16;
+        let outbox_strip_internal = if outbox_strip_internal {
+            true
+        } else {
+            gateway_role == "read"
+        };
 
         Self {
             jwt_alg,
@@ -213,6 +260,7 @@ impl Config {
             jwt_issuer,
             jwt_audience,
             jwt_leeway,
+            gateway_role,
             ws_mode,
             events_mode,
             symfony_webhook_url,
@@ -237,16 +285,24 @@ impl Config {
             ws_rate_limit_per_sec,
             ws_rate_limit_burst,
             ws_outbox_queue_size,
+            ws_outbox_drop_strategy,
+            outbox_strip_internal,
             redis_publish_batch_max,
             redis_publish_batch_interval_ms,
             redis_publish_batch_queue_size,
             json_buffer_pool_size,
             json_buffer_pool_bytes,
+            redis_stream_maxlen,
+            replay_strategy,
             ordering_strategy,
             ordering_topic_field,
             ordering_subject_source,
+            channel_routing_strategy,
             ordering_partition_mode,
             ordering_partition_max_len,
+            snowflake_enabled,
+            snowflake_worker_id,
+            snowflake_epoch_ms,
             rabbitmq_dsn,
             rabbitmq_queue,
             rabbitmq_exchange,
@@ -296,6 +352,22 @@ impl Config {
 
     pub(crate) fn presence_enabled(&self) -> bool {
         !self.presence_redis_dsn.is_empty()
+    }
+
+    pub(crate) fn role_read(&self) -> bool {
+        matches!(self.gateway_role.as_str(), "read" | "both")
+    }
+
+    pub(crate) fn role_write(&self) -> bool {
+        matches!(self.gateway_role.as_str(), "write" | "both")
+    }
+
+    pub(crate) fn ws_outbox_drop_oldest(&self) -> bool {
+        self.ws_outbox_drop_strategy == "drop_oldest"
+    }
+
+    pub(crate) fn channel_routing_enabled(&self) -> bool {
+        self.channel_routing_strategy == "channel_id"
     }
 
     pub(crate) fn tracing_trace_id_field(&self) -> &str {

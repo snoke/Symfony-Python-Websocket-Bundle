@@ -12,7 +12,6 @@ use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::{borrow::Cow, collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use crate::services::auth::verify_jwt;
@@ -29,14 +28,17 @@ use crate::services::replay::{
     redis_idempotency_set, redis_rate_limit_allow, replay_from_dlq, ReplayState,
 };
 use crate::services::settings::Config;
-use crate::services::utils::{unix_timestamp, JsonBufferPool, value_to_string};
+use crate::services::snowflake::SnowflakeGenerator;
+use crate::services::utils::{unix_timestamp, unix_timestamp_ms, JsonBufferPool, value_to_string};
 use crate::services::redis_batch::RedisBatcher;
+use crate::services::message::{InternalMessage, message_channel_id, message_flags, message_payload};
 
 const SIMPLE_PING: &str = r#"{"type":"ping"}"#;
 const SIMPLE_HEARTBEAT: &str = r#"{"type":"heartbeat"}"#;
 const PONG_MESSAGE: &str = r#"{"type":"pong"}"#;
 const HEARTBEAT_ACK_MESSAGE: &str = r#"{"type":"heartbeat_ack"}"#;
 const RATE_LIMITED_MESSAGE: &str = r#"{"type":"rate_limited"}"#;
+const READ_ONLY_MESSAGE: &str = r#"{"type":"read_only"}"#;
 
 pub(crate) struct AppState {
     pub(crate) config: Config,
@@ -50,6 +52,7 @@ pub(crate) struct AppState {
     pub(crate) http: reqwest::Client,
     pub(crate) json_pool: Arc<JsonBufferPool>,
     pub(crate) redis_batcher: Option<RedisBatcher>,
+    pub(crate) snowflake: Option<Arc<SnowflakeGenerator>>,
 }
 
 impl AppState {
@@ -81,6 +84,14 @@ impl AppState {
             config.json_buffer_pool_size,
             config.json_buffer_pool_bytes,
         ));
+        let snowflake = if config.snowflake_enabled && config.role_write() {
+            Some(Arc::new(SnowflakeGenerator::new(
+                config.snowflake_worker_id,
+                config.snowflake_epoch_ms,
+            )))
+        } else {
+            None
+        };
         let redis_batcher = if let Some(client) = &redis {
             if config.redis_publish_batch_max > 1 {
                 Some(RedisBatcher::new(
@@ -108,23 +119,31 @@ impl AppState {
             http,
             json_pool,
             redis_batcher,
+            snowflake,
         }
     }
 
     pub(crate) fn start_background_tasks(self: &Arc<Self>) {
         self.presence.start_worker();
-        if self.redis.is_some() {
+        if self.redis.is_some() && self.config.role_read() {
             let state = Arc::clone(self);
             tokio::spawn(async move {
                 redis_outbox_consumer(state).await;
             });
         }
-        if !self.config.rabbitmq_dsn.is_empty() {
+        if !self.config.rabbitmq_dsn.is_empty() && self.config.role_read() {
             let state = Arc::clone(self);
             tokio::spawn(async move {
                 rabbit_outbox_consumer(state).await;
             });
         }
+    }
+
+    fn next_internal_id(&self) -> String {
+        if let Some(generator) = &self.snowflake {
+            return generator.next_id_string();
+        }
+        uuid::Uuid::new_v4().to_string()
     }
 }
 
@@ -164,11 +183,12 @@ async fn ws_handler(
     Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let token = extract_token(&headers, &params);
+    let channels = extract_channels(&params);
     let traceparent = headers
         .get("traceparent")
         .and_then(|v| v.to_str().ok())
         .map(|v| v.to_string());
-    ws.on_upgrade(move |socket| handle_socket(socket, state, token, traceparent))
+    ws.on_upgrade(move |socket| handle_socket(socket, state, token, traceparent, channels))
 }
 
 fn extract_token(headers: &HeaderMap, params: &HashMap<String, String>) -> Option<String> {
@@ -190,6 +210,25 @@ fn extract_token(headers: &HeaderMap, params: &HashMap<String, String>) -> Optio
         }
     }
     None
+}
+
+fn extract_channels(params: &HashMap<String, String>) -> Vec<String> {
+    let mut channels = Vec::new();
+    if let Some(value) = params.get("channels") {
+        for item in value.split(',') {
+            let trimmed = item.trim();
+            if !trimmed.is_empty() {
+                channels.push(trimmed.to_string());
+            }
+        }
+    }
+    if let Some(value) = params.get("channel") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            channels.push(trimmed.to_string());
+        }
+    }
+    channels
 }
 
 fn is_exact_json(text: &str, expected: &str) -> bool {
@@ -231,6 +270,7 @@ async fn handle_socket(
     state: Arc<AppState>,
     token: Option<String>,
     traceparent: Option<String>,
+    channels: Vec<String>,
 ) {
     let Some(token) = token else {
         close_ws(socket, "missing token").await;
@@ -254,7 +294,10 @@ async fn handle_socket(
         return;
     }
 
-    let subjects = vec![format!("user:{user_id}")];
+    let mut subjects = vec![format!("user:{user_id}")];
+    for channel in channels {
+        subjects.push(format!("channel:{channel}"));
+    }
     let connection_id = uuid::Uuid::new_v4().to_string();
     let connected_at = unix_timestamp();
     let conn_info = ConnectionInfo {
@@ -266,9 +309,12 @@ async fn handle_socket(
     };
 
     let (mut sender, mut receiver) = socket.split();
-    let (tx, mut rx) = mpsc::channel::<Message>(state.config.ws_outbox_queue_size);
+    let outbox = Arc::new(crate::services::connections::WsOutbox::new(
+        state.config.ws_outbox_queue_size,
+        state.config.ws_outbox_drop_oldest(),
+    ));
 
-    state.connections.add(conn_info.clone(), tx).await;
+    state.connections.add(conn_info.clone(), Arc::clone(&outbox)).await;
     Metrics::inc(&state.metrics.ws_connections_total, 1);
     info!(
         "ws_connected connection_id={} user_id={}",
@@ -287,11 +333,12 @@ async fn handle_socket(
     publish_connection_event(state.as_ref(), "connected", &conn_info).await;
 
     let send_task = tokio::spawn(async move {
-        while let Some(msg) = rx.recv().await {
+        while let Some(msg) = outbox.pop().await {
             if sender.send(msg).await.is_err() {
                 break;
             }
         }
+        outbox.close().await;
     });
 
     let mut rate_limiter =
@@ -335,6 +382,22 @@ async fn handle_socket(
                 }
 
                 Metrics::inc(&state.metrics.ws_messages_total, 1);
+                if !state.config.role_write() {
+                    let outcome = state
+                        .connections
+                        .send_message(
+                            &connection_id,
+                            Message::Text(READ_ONLY_MESSAGE.to_string()),
+                        )
+                        .await;
+                    if outcome.sent {
+                        Metrics::inc(&state.metrics.ws_messages_out_total, 1);
+                    }
+                    if outcome.dropped {
+                        Metrics::inc(&state.metrics.backpressure_dropped_total, 1);
+                    }
+                    continue;
+                }
                 if state.config.presence_enabled()
                     && state.config.presence_refresh_on_message
                     && (state.config.presence_strategy == "ttl"
@@ -342,7 +405,26 @@ async fn handle_socket(
                 {
                     state.presence.refresh(&conn_info).await;
                 }
-                publish_message_event(state.as_ref(), &conn_info, &data, &text).await;
+                let internal_id = state.next_internal_id();
+                let timestamp_ms = unix_timestamp_ms();
+                let fallback_channel = conn_info
+                    .subjects
+                    .iter()
+                    .find_map(|s| s.strip_prefix("channel:"))
+                    .unwrap_or(conn_info.user_id.as_str());
+                let channel_id = message_channel_id(&data, fallback_channel);
+                let flags = message_flags(&data);
+                let payload = message_payload(&data);
+                let internal = InternalMessage {
+                    internal_id,
+                    timestamp_ms,
+                    user_id: conn_info.user_id.clone(),
+                    channel_id,
+                    flags,
+                    payload,
+                    schema_version: 1,
+                };
+                publish_message_event(state.as_ref(), &conn_info, &data, &text, &internal).await;
             }
             Message::Close(_) => break,
             _ => {}
@@ -387,6 +469,13 @@ async fn publish_handler(
     headers: HeaderMap,
     Json(payload): Json<PublishRequest>,
 ) -> impl IntoResponse {
+    if !state.config.role_read() {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(json!({"detail": "read role required"})),
+        )
+            .into_response();
+    }
     let api_key = payload.api_key.clone().unwrap_or_default();
     if !state.config.gateway_api_key.is_empty() && api_key != state.config.gateway_api_key {
         return (axum::http::StatusCode::UNAUTHORIZED, Json(json!({"detail": "invalid api key"})))
@@ -416,6 +505,13 @@ async fn replay_handler(
     headers: HeaderMap,
     Json(payload): Json<Value>,
 ) -> impl IntoResponse {
+    if !state.config.role_write() {
+        return (
+            axum::http::StatusCode::FORBIDDEN,
+            Json(json!({"detail": "write role required"})),
+        )
+            .into_response();
+    }
     Metrics::inc(&state.metrics.replay_api_requests_total, 1);
     let request_id = headers
         .get("X-Request-Id")

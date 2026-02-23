@@ -2,9 +2,9 @@ use axum::extract::ws::Message;
 use dashmap::{DashMap, DashSet};
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex, Notify};
 
 #[derive(Clone, Debug, Serialize)]
 pub(crate) struct ConnectionInfo {
@@ -18,7 +18,7 @@ pub(crate) struct ConnectionInfo {
 
 struct ConnectionEntry {
     info: ConnectionInfo,
-    sender: mpsc::Sender<Message>,
+    outbox: Arc<WsOutbox>,
 }
 
 #[derive(Clone)]
@@ -37,6 +37,86 @@ pub(crate) struct SendOutcome {
     pub(crate) dropped: bool,
 }
 
+pub(crate) struct WsOutbox {
+    state: Mutex<OutboxState>,
+    notify: Notify,
+    capacity: usize,
+    drop_oldest: bool,
+}
+
+struct OutboxState {
+    queue: VecDeque<Message>,
+    closed: bool,
+}
+
+impl WsOutbox {
+    pub(crate) fn new(capacity: usize, drop_oldest: bool) -> Self {
+        let capacity = capacity.max(1);
+        Self {
+            state: Mutex::new(OutboxState {
+                queue: VecDeque::with_capacity(capacity.min(256)),
+                closed: false,
+            }),
+            notify: Notify::new(),
+            capacity,
+            drop_oldest,
+        }
+    }
+
+    pub(crate) async fn push(&self, message: Message) -> SendOutcome {
+        let mut dropped = false;
+        let mut guard = self.state.lock().await;
+        if guard.closed {
+            return SendOutcome {
+                sent: false,
+                dropped: false,
+            };
+        }
+        if guard.queue.len() >= self.capacity {
+            if self.drop_oldest {
+                guard.queue.pop_front();
+                dropped = true;
+            } else {
+                return SendOutcome {
+                    sent: false,
+                    dropped: true,
+                };
+            }
+        }
+        guard.queue.push_back(message);
+        drop(guard);
+        self.notify.notify_one();
+        SendOutcome {
+            sent: true,
+            dropped,
+        }
+    }
+
+    pub(crate) async fn pop(&self) -> Option<Message> {
+        loop {
+            let notified = {
+                let mut guard = self.state.lock().await;
+                if let Some(message) = guard.queue.pop_front() {
+                    return Some(message);
+                }
+                if guard.closed {
+                    return None;
+                }
+                self.notify.notified()
+            };
+            notified.await;
+        }
+    }
+
+    pub(crate) async fn close(&self) {
+        let mut guard = self.state.lock().await;
+        guard.closed = true;
+        guard.queue.clear();
+        drop(guard);
+        self.notify.notify_waiters();
+    }
+}
+
 impl ConnectionManager {
     pub(crate) fn new() -> Self {
         Self {
@@ -45,7 +125,7 @@ impl ConnectionManager {
         }
     }
 
-    pub(crate) async fn add(&self, info: ConnectionInfo, sender: mpsc::Sender<Message>) {
+    pub(crate) async fn add(&self, info: ConnectionInfo, outbox: Arc<WsOutbox>) {
         let conn_id = info.connection_id.clone();
         for subject in &info.subjects {
             let entry = self
@@ -54,12 +134,13 @@ impl ConnectionManager {
                 .or_insert_with(DashSet::new);
             entry.insert(conn_id.clone());
         }
-        self.connections.insert(conn_id, ConnectionEntry { info, sender });
+        self.connections.insert(conn_id, ConnectionEntry { info, outbox });
     }
 
     pub(crate) async fn remove(&self, connection_id: &str) -> Option<ConnectionInfo> {
         let entry = self.connections.remove(connection_id);
         if let Some((_key, entry)) = &entry {
+            entry.outbox.close().await;
             for subject in &entry.info.subjects {
                 if let Some(set) = self.subjects.get(subject) {
                     set.remove(connection_id);
@@ -101,45 +182,34 @@ impl ConnectionManager {
                 }
             }
         }
-        let mut senders = Vec::with_capacity(targets.len());
+        let mut outboxes = Vec::with_capacity(targets.len());
         for id in targets {
             if let Some(entry) = self.connections.get(&id) {
-                senders.push(entry.sender.clone());
+                outboxes.push(entry.outbox.clone());
             }
         }
         let mut sent = 0;
         let mut dropped = 0;
         let message = text.to_string();
-        for sender in senders {
-            match sender.try_send(Message::Text(message.clone())) {
-                Ok(_) => sent += 1,
-                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => dropped += 1,
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
+        for outbox in outboxes {
+            let outcome = outbox.push(Message::Text(message.clone())).await;
+            if outcome.sent {
+                sent += 1;
+            }
+            if outcome.dropped {
+                dropped += 1;
             }
         }
         SendStats { sent, dropped }
     }
 
     pub(crate) async fn send_message(&self, connection_id: &str, message: Message) -> SendOutcome {
-        let sender = self
+        let outbox = self
             .connections
             .get(connection_id)
-            .map(|entry| entry.sender.clone());
-        match sender {
-            Some(sender) => match sender.try_send(message) {
-                Ok(_) => SendOutcome {
-                    sent: true,
-                    dropped: false,
-                },
-                Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => SendOutcome {
-                    sent: false,
-                    dropped: true,
-                },
-                Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => SendOutcome {
-                    sent: false,
-                    dropped: false,
-                },
-            },
+            .map(|entry| entry.outbox.clone());
+        match outbox {
+            Some(outbox) => outbox.push(message).await,
             None => SendOutcome {
                 sent: false,
                 dropped: false,
