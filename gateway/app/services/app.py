@@ -38,6 +38,22 @@ def _is_exact_json(message: str, expected: str) -> bool:
     return len(trimmed) == len(expected) and trimmed == expected
 
 
+def _extract_channels(query_params) -> list[str]:
+    channels: list[str] = []
+    raw = query_params.get("channels")
+    if raw:
+        for item in raw.split(","):
+            item = item.strip()
+            if item:
+                channels.append(item)
+    raw = query_params.get("channel")
+    if raw:
+        item = raw.strip()
+        if item:
+            channels.append(item)
+    return channels
+
+
 class GatewayApp:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -119,6 +135,8 @@ class GatewayApp:
             return
 
         subjects = [f"user:{user_id}"]
+        for channel in _extract_channels(websocket.query_params):
+            subjects.append(f"channel:{channel}")
 
         await websocket.accept()
         conn = self._connections.add(websocket, user_id, subjects)
@@ -158,7 +176,12 @@ class GatewayApp:
                     self._presence.refresh(conn)
                 internal_id = self._next_internal_id()
                 timestamp_ms = int(time.time() * 1000)
-                channel_id = extract_channel_id(data, conn.user_id)
+                channel_fallback = conn.user_id
+                for subject in conn.subjects:
+                    if subject.startswith("channel:"):
+                        channel_fallback = subject.split(":", 1)[1]
+                        break
+                channel_id = extract_channel_id(data, channel_fallback)
                 flags = extract_flags(data)
                 payload = extract_payload(data)
                 internal = InternalMessage(

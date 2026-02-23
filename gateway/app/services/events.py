@@ -78,6 +78,8 @@ class EventPublisher:
         has_parent = bool(traceparent or incoming_trace_id)
         span_ctx = self._tracing.extract_context(traceparent) if traceparent else None
         ordering_key = self._ordering.derive_ordering_key(conn, data)
+        if self._settings.CHANNEL_ROUTING_STRATEGY == "channel_id" and internal.channel_id:
+            ordering_key = internal.channel_id
         payload = {
             "type": "message_received",
             "schema_version": internal.schema_version,
@@ -99,7 +101,11 @@ class EventPublisher:
             payload[self._settings.TRACING_TRACE_ID_FIELD] = incoming_trace_id
         if ordering_key:
             payload["ordering_key"] = ordering_key
-            payload["ordering_strategy"] = self._settings.ORDERING_STRATEGY
+            payload["ordering_strategy"] = (
+                self._settings.CHANNEL_ROUTING_STRATEGY
+                if self._settings.CHANNEL_ROUTING_STRATEGY == "channel_id"
+                else self._settings.ORDERING_STRATEGY
+            )
 
         if self._tracing.enabled and self._tracing.should_record(has_parent):
             with self._tracing.tracer.start_as_current_span(
