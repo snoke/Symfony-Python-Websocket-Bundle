@@ -6,6 +6,7 @@ from opentelemetry.trace import SpanKind
 
 from .broker import BrokerService
 from .logging_service import LoggingService
+from .message import InternalMessage
 from .metrics import MetricsService
 from .ordering import OrderingService
 from .settings import Settings
@@ -71,7 +72,7 @@ class EventPublisher:
             else:
                 await self._webhook.post(event_type, payload, body=ensure_body())
 
-    async def publish_message_event(self, conn, data: Dict[str, Any], raw: str) -> None:
+    async def publish_message_event(self, conn, data: Dict[str, Any], raw: str, internal: InternalMessage) -> None:
         traceparent = self._tracing.extract_traceparent(data) or conn.traceparent
         incoming_trace_id = self._tracing.extract_trace_id(data)
         has_parent = bool(traceparent or incoming_trace_id)
@@ -79,8 +80,14 @@ class EventPublisher:
         ordering_key = self._ordering.derive_ordering_key(conn, data)
         payload = {
             "type": "message_received",
+            "schema_version": internal.schema_version,
+            "internal_id": internal.internal_id,
+            "timestamp_ms": internal.timestamp_ms,
+            "user_id": internal.user_id,
+            "channel_id": internal.channel_id,
+            "flags": internal.flags.to_dict(),
+            "payload": internal.payload,
             "connection_id": conn.id,
-            "user_id": conn.user_id,
             "subjects": list(conn.subjects),
             "connected_at": conn.connected_at,
             "message": data,

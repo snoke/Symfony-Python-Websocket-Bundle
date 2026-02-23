@@ -7,6 +7,7 @@ from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
 from fastapi import WebSocket
 
+from .message import InternalMessage
 from .settings import Settings
 
 
@@ -21,7 +22,7 @@ class Connection:
         self._tokens = settings.WS_RATE_LIMIT_BURST
         self._last_refill = time.time()
         self._settings = settings
-        self.buffer: Deque[Tuple[Dict[str, Any], str]] = deque()
+        self.buffer: Deque[Tuple[Dict[str, Any], str, InternalMessage]] = deque()
         self.buffer_event = asyncio.Event()
         self.buffer_task: Optional[asyncio.Task] = None
 
