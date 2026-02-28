@@ -4,7 +4,7 @@ services:
       - GATEWAY_ROLE=read
 
   gateway-write:
-    build: ./rust_gateway
+    build: ./gateway/gateway-rust
     environment:
       - GATEWAY_ROLE=write
       - WS_MODE=core

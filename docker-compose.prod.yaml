@@ -17,7 +17,7 @@ services:
       - ./traefik/acme.json:/etc/traefik/acme.json
 
   gateway:
-    build: ./gateway
+    build: ./gateway/gateway-python
     restart: unless-stopped
     environment:
       - WS_MODE=${WS_MODE:-terminator}

@@ -1,6 +1,6 @@
 services:
   gateway:
-    build: ./rust_gateway
+    build: ./gateway/gateway-rust
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health > /dev/null"]
       interval: 10s

@@ -21,6 +21,10 @@ This stack provides bidirectional, highly scalable realtime WebSocket for Symfon
    git clone https://github.com/snoke/Symfony-Python-Realtime-Stack.git
    cd Symfony-Python-Realtime-Stack
    ```
+   If you want the gateway source locally (submodules):
+   ```
+   git submodule update --init --recursive
+   ```
 2. Generate dev keys (RS256):
    ```
    ./scripts/gen_dev_keys.sh
@@ -55,6 +59,26 @@ docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml -f docke
 Core mode:
 ```
 docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml -f docker-compose.rust-gateway.yaml up --build
+```
+
+## Submodules (Gateways)
+The gateways live in separate repos and are included as submodules:
+- `gateway/gateway-python` (Python)
+- `gateway/gateway-rust` (Rust)
+
+Common flows:
+```
+# clone with both gateways
+git clone --recurse-submodules https://github.com/snoke/Symfony-Python-Realtime-Stack.git
+
+# only Python gateway
+git submodule update --init gateway/gateway-python
+
+# only Rust gateway
+git submodule update --init gateway/gateway-rust
+
+# update to latest commits
+git submodule update --remote
 ```
 
 ## Project Integration

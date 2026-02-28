@@ -1,6 +1,6 @@
-[submodule "gateway"]
-	path = gateway
+[submodule "gateway/gateway-python"]
+	path = gateway/gateway-python
 	url = git@github.com:snoke/python-ws-gateway.git
-[submodule "rust_gateway"]
-	path = rust_gateway
+[submodule "gateway/gateway-rust"]
+	path = gateway/gateway-rust
 	url = git@github.com:snoke/rust-ws-gateway.git
