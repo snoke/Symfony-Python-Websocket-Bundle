@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.2] - 2026-02-23
 ### Added
 - MIT License file.
-- Experimental Rust gateway with Docker Compose override (`docker-compose.rust-gateway.yaml`).
+- Experimental Rust gateway with Docker Compose override (`gateway/gateway-rust/docker-compose.yaml`).
 - Rust gateway services mirroring the Python gateway (WS, auth/JWT, rate limiting, metrics, Redis/Rabbit/Webhook handlers).
 - Rust gateway tuning knobs: bounded WS outbox queue + optional Redis publish batching + JSON buffer pool sizing envs.
 - Gateway smoke tests now include Redis outbox delivery check (core mode).

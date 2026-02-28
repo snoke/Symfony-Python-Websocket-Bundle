@@ -12,7 +12,6 @@ services:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
 
   gateway:
-    build: ./gateway/gateway-python
     environment:
       - JWT_ALG=RS256
       - JWT_USER_ID_CLAIM=user_id
@@ -24,11 +23,6 @@ services:
       - JWT_PUBLIC_KEY_FILE=/run/keys/dev_public.pem
     volumes:
       - ./scripts/keys/dev_public.pem:/run/keys/dev_public.pem:ro
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\""]
-      interval: 10s
-      timeout: 3s
-      retries: 5
     labels:
       - traefik.http.routers.ws.rule=PathPrefix(`/ws`) || PathPrefix(`/internal`)
       - traefik.http.routers.ws.entrypoints=web

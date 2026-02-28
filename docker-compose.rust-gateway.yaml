@@ -1,8 +1,0 @@
-services:
-  gateway:
-    build: ./gateway/gateway-rust
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health > /dev/null"]
-      interval: 10s
-      timeout: 3s
-      retries: 5

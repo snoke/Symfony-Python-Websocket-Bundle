@@ -29,17 +29,21 @@ This stack provides bidirectional, highly scalable realtime WebSocket for Symfon
    ```
    ./scripts/gen_dev_keys.sh
    ```
-3. Start a mode (choose one):
+3. Start a mode (choose one) + pick a gateway (Python or Rust):
 
-   Core mode:
+   Core mode (Python gateway):
    ```
-   docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml up --build
+   docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml -f gateway/gateway-python/docker-compose.yaml up --build
    ```
-   Terminator mode:
+   Terminator mode (Python gateway):
    ```
    SYMFONY_WEBHOOK_URL=http://symfony:8000/internal/ws/events \
-   docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml up --build
+   docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml -f gateway/gateway-python/docker-compose.yaml up --build
    ```
+   Swap the last file to use Rust instead:
+   - `gateway/gateway-rust/docker-compose.yaml`
+
+   Note: `docker-compose.yaml` only defines shared gateway settings; you must include one gateway compose file to supply the build.
    Dev builds skip gRPC. If you need gRPC, either use `docker-compose.prod.yaml`
    or build with `INSTALL_GRPC=1`.
 4. Verify:
@@ -49,16 +53,16 @@ This stack provides bidirectional, highly scalable realtime WebSocket for Symfon
 
 
 ## Rust Gateway (experimental)
-The Rust gateway can replace the Python gateway via a Compose override:
+The Rust gateway can replace the Python gateway by swapping the last Compose file:
 
 Terminator mode:
 ```
-docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml -f docker-compose.rust-gateway.yaml up --build
+docker compose -f docker-compose.yaml -f docker-compose.terminator.yaml -f gateway/gateway-rust/docker-compose.yaml up --build
 ```
 
 Core mode:
 ```
-docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml -f docker-compose.rust-gateway.yaml up --build
+docker compose -f docker-compose.yaml -f docker-compose.realtime-core.yaml -f gateway/gateway-rust/docker-compose.yaml up --build
 ```
 
 ## Submodules (Gateways)
