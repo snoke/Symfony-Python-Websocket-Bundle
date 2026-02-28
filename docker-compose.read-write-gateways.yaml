@@ -1,0 +1,44 @@
+services:
+  gateway:
+    environment:
+      - GATEWAY_ROLE=read
+
+  gateway-write:
+    build: ./rust_gateway
+    environment:
+      - GATEWAY_ROLE=write
+      - WS_MODE=core
+      - EVENTS_MODE=broker
+      - SYMFONY_WEBHOOK_URL=
+      - REDIS_DSN=redis://redis:6379
+      - REDIS_STREAM=ws.outbox
+      - REDIS_INBOX_STREAM=ws.inbox
+      - REDIS_EVENTS_STREAM=ws.events
+      - PRESENCE_REDIS_DSN=redis://redis:6379
+      - "PRESENCE_REDIS_PREFIX=presence:"
+      - PRESENCE_TTL_SECONDS=120
+      - RABBITMQ_DSN=amqp://guest:guest@rabbitmq:5672/
+      - RABBITMQ_EXCHANGE=ws.outbox
+      - RABBITMQ_ROUTING_KEY=ws.outbox
+      - RABBITMQ_QUEUE=ws.outbox
+      - RABBITMQ_INBOX_EXCHANGE=ws.inbox
+      - RABBITMQ_INBOX_ROUTING_KEY=ws.inbox
+      - RABBITMQ_EVENTS_EXCHANGE=ws.events
+      - RABBITMQ_EVENTS_ROUTING_KEY=ws.events
+      - RABBITMQ_DLQ_EXCHANGE=ws.dlq
+      - RABBITMQ_DLQ_QUEUE=ws.dlq
+      - JWT_ALG=RS256
+      - JWT_USER_ID_CLAIM=user_id
+      - JWT_PUBLIC_KEY=
+      - JWT_JWKS_URL=
+      - GATEWAY_API_KEY=dev-key
+      - LOG_LEVEL=INFO
+      - LOG_FORMAT=json
+      - JWT_PUBLIC_KEY_FILE=/run/keys/dev_public.pem
+    volumes:
+      - ./scripts/keys/dev_public.pem:/run/keys/dev_public.pem:ro
+    ports:
+      - "8181:8000"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
